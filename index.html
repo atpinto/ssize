@@ -1,0 +1,1269 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sample size and power</title>
+<meta name="description" content="Sample size and power for two-arm randomised trials: continuous, binary, odds ratio, relative risk, hazard ratio, RMST and count outcomes, by formula or simulation.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23172031'/%3E%3Cpath d='M6 24c6 0 6-15 10-15s4 15 10 15' stroke='%23FF7247' stroke-width='2.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,800&family=IBM+Plex+Mono:wght@500&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+/* Same visual system as the propensity score simulation */
+:root{
+  --bg:#EDF0F4; --surface:#FFFFFF; --ink:#172031; --muted:#5B6576; --faint:#C6CED9; --grid:#E4E8EE; --soft:#F1F4F8;
+  --trt:#D6431B; --ctl:#2B67AC;
+  --warn-bg:#FFF4DE; --warn:#7A5200; --err-bg:#FDECEA; --err:#B42318;
+  --f-display:"Bricolage Grotesque","Avenir Next",system-ui,sans-serif;
+  --f-body:"Atkinson Hyperlegible","Segoe UI",system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0E131A; --surface:#161D27; --ink:#E6EBF2; --muted:#94A0B1; --faint:#3A4555; --grid:#222B37; --soft:#1E2733;
+  --trt:#FF7247; --ctl:#6BA6EC; --warn-bg:#2A2314; --warn:#F0C674; --err-bg:#2D1A1A; --err:#FF9C92; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0E131A; --surface:#161D27; --ink:#E6EBF2; --muted:#94A0B1; --faint:#3A4555; --grid:#222B37; --soft:#1E2733;
+  --trt:#FF7247; --ctl:#6BA6EC; --warn-bg:#2A2314; --warn:#F0C674; --err-bg:#2D1A1A; --err:#FF9C92; color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:16px;line-height:1.4}
+[hidden]{display:none!important}
+a{color:var(--ctl)}
+.wrap{max-width:1200px;margin:0 auto;padding-block:18px 28px;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  display:grid;gap:14px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:8px 24px}
+h1{font-family:var(--f-display);font-weight:800;font-size:clamp(1.6rem,3.2vw,2.4rem);letter-spacing:-.015em;margin:0;line-height:1.05;text-wrap:balance}
+.sub{color:var(--muted);margin:4px 0 0;font-size:1.02rem}
+.languages{display:flex;gap:4px}
+.lang{padding:5px;border:1px solid transparent;border-radius:6px;background:transparent;line-height:0;opacity:.5;cursor:pointer}
+.lang:hover{opacity:1}
+.lang[aria-pressed="true"]{opacity:1;border-color:var(--faint)}
+.lang svg{width:30px;height:20px;border-radius:2px;box-shadow:0 0 0 1px rgba(23,32,49,.18)}
+
+/* outcome bar: pill chips like the step bar */
+.outcomes{display:flex;gap:6px;flex-wrap:wrap}
+.chip,.seg button,.btn,.run{font:700 .95rem var(--f-body);cursor:pointer;color:var(--muted);background:var(--surface);border:1px solid var(--faint)}
+.chip{padding:6px 14px 6px 6px;border-radius:999px;display:flex;gap:8px;align-items:center;text-align:left}
+.chip .g{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--bg);flex:none}
+.chip .g svg{width:17px;height:17px;display:block}
+.chip .nm{display:block;line-height:1.1}
+.chip .sb{display:block;font-weight:400;font-size:.76rem;line-height:1.15;opacity:.85}
+.chip:hover{color:var(--ink)}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.chip[aria-pressed="true"] .g{background:var(--surface)}
+button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid var(--ctl);outline-offset:2px}
+
+.main{display:grid;grid-template-columns:350px minmax(0,1fr);gap:14px;align-items:start}
+@media (max-width:900px){.main{grid-template-columns:1fr}}
+.card{background:var(--surface);border:1px solid var(--grid);border-radius:16px;min-width:0}
+.card>h2,.card summary{font:700 .78rem var(--f-body);letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin:0;padding:14px 16px 8px;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.card>h2 .t{color:var(--ink)}
+
+/* form */
+.form-body{padding:4px 16px 16px;display:flex;flex-direction:column;gap:12px}
+.field{display:flex;flex-direction:column;gap:5px;min-width:0}
+.field label,.field .flab{font-size:.9rem;font-weight:700;color:var(--muted);display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.hint{font-weight:400;font-size:.8rem;color:var(--muted)}
+input[type=number],select{font:500 .95rem var(--f-mono);padding:8px 10px;border:1px solid var(--faint);border-radius:10px;background:var(--bg);color:var(--ink);width:100%}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.seg{display:flex;border:1px solid var(--faint);border-radius:999px;overflow:hidden}
+.seg button{flex:1;border:0;border-radius:0;padding:7px 10px;font-size:.88rem;background:transparent}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+fieldset.grp{border:1px solid var(--grid);border-radius:12px;padding:8px 12px 12px;margin:0;display:flex;flex-direction:column;gap:10px;min-width:0}
+fieldset.grp legend{font:700 .72rem var(--f-body);letter-spacing:.09em;text-transform:uppercase;color:var(--muted);padding:0 6px}
+.switch-row{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:.9rem;font-weight:700;color:var(--muted)}
+.switch-row input{width:20px;height:20px;accent-color:var(--ink)}
+.rho-wrap{display:flex;align-items:center;gap:10px}
+.rho-wrap input{flex:1;accent-color:var(--ink)}
+.rho-wrap output{font:500 .85rem var(--f-mono);color:var(--ink);min-width:2.6em;text-align:right}
+.run{background:var(--ink);color:var(--bg);border-color:var(--ink);border-radius:999px;padding:11px 16px;font-size:1rem}
+.run:disabled{opacity:.55;cursor:wait}
+.progress{height:6px;border-radius:99px;background:var(--grid);overflow:hidden;display:none}
+.progress.on{display:block}
+.progress i{display:block;height:100%;width:0;background:var(--trt);transition:width .1s}
+.err{display:none;color:var(--err);background:var(--err-bg);border-radius:10px;padding:9px 11px;font-size:.9rem}
+.err.on{display:block}
+
+/* results */
+.results{display:flex;flex-direction:column;gap:14px;min-width:0}
+.res-empty{padding:44px 24px;text-align:center;color:var(--muted)}
+.res-empty .big{font-family:var(--f-display);font-weight:800;font-size:1.3rem;color:var(--ink);margin-bottom:6px}
+.headline{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:stretch}
+@media (max-width:640px){.headline{grid-template-columns:1fr}}
+.n-block{padding:18px 22px;border-right:1px solid var(--grid);display:flex;flex-direction:column;justify-content:center;min-width:210px}
+@media (max-width:640px){.n-block{border-right:0;border-bottom:1px solid var(--grid)}}
+.lab{font:700 .72rem var(--f-body);letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.N{font-family:var(--f-display);font-weight:800;font-size:3.4rem;line-height:1.05;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.N .nsym{font-family:var(--f-mono);font-weight:500;font-size:1.3rem;color:var(--muted);margin-right:8px;vertical-align:.5em}
+.after{font-size:.9rem;color:var(--muted);margin-top:4px}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:4px 0;padding:10px 6px}
+.stat{padding:8px 14px}
+.stat .val{font:500 1.3rem var(--f-mono);font-variant-numeric:tabular-nums;margin-top:2px}
+.stat .val small{font-size:.75rem;color:var(--muted)}
+.stat .val.ctrl{color:var(--ctl)} .stat .val.trt{color:var(--trt)}
+.formula-strip{font:500 .8rem var(--f-mono);color:var(--muted);background:var(--soft);border-top:1px solid var(--grid);padding:10px 16px;overflow-x:auto;white-space:nowrap;border-radius:0 0 16px 16px}
+.formula-strip b{color:var(--ink)}
+.warn-note{margin:0 16px 12px;padding:9px 12px;border-radius:10px;background:var(--warn-bg);color:var(--warn);font-size:.88rem}
+.chart-box{padding:4px 14px 4px;height:320px;position:relative}
+.chart-note{padding:2px 16px 14px;font-size:.85rem;color:var(--muted)}
+.cov-body{padding:4px 16px 16px;display:grid;grid-template-columns:220px minmax(0,1fr);gap:16px;align-items:center}
+@media (max-width:640px){.cov-body{grid-template-columns:1fr}}
+.cov-chart-box{height:190px;position:relative}
+.cov-read{font-size:.95rem}
+.delta{font:800 2rem var(--f-display);color:var(--trt)}
+.small{font-size:.82rem;color:var(--muted);margin-top:8px}
+.paper-text{margin:0 16px 16px;padding:14px 16px;background:var(--soft);border-radius:12px;font-size:1rem;line-height:1.6}
+.btn{padding:5px 12px;border-radius:999px;font-size:.82rem;letter-spacing:0;text-transform:none}
+details.methods summary{cursor:pointer;list-style:none;padding-bottom:14px;justify-content:flex-start}
+details.methods summary::-webkit-details-marker{display:none}
+details.methods summary::before{content:"▸";transition:transform .15s}
+details.methods[open] summary::before{transform:rotate(90deg)}
+.m-body{padding:0 16px 16px;font-size:.92rem;display:flex;flex-direction:column;gap:2px;max-width:75ch}
+.m-body p{margin:0 0 8px}
+.foot{font-size:.8rem;color:var(--muted);text-align:center;margin:6px 0 0}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div><h1 id="h1">Sample size and power</h1><p class="sub" id="sub"></p></div>
+    <span class="languages" role="group" aria-label="Language">
+      <button type="button" class="lang" data-lang="en" lang="en" aria-label="English" title="English"><svg viewBox="0 0 60 30" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><clipPath id="uk-cross"><path d="M30 15h30v15zv15H0zH0V0zV0h30z"/></clipPath><path d="M0 0h60v30H0z" fill="#012169"/><path d="M0 0l60 30m0-30L0 30" stroke="#fff" stroke-width="6"/><path d="M0 0l60 30m0-30L0 30" clip-path="url(#uk-cross)" stroke="#c8102e" stroke-width="4"/><path d="M30 0v30M0 15h60" stroke="#fff" stroke-width="10"/><path d="M30 0v30M0 15h60" stroke="#c8102e" stroke-width="6"/></svg></button>
+      <button type="button" class="lang" data-lang="es" lang="es" aria-label="Español" title="Español"><svg viewBox="0 0 3 2" aria-hidden="true"><path d="M0 0h3v2H0z" fill="#aa151b"/><path d="M0 .5h3v1H0z" fill="#f1bf00"/></svg></button>
+      <button type="button" class="lang" data-lang="pt" lang="pt" aria-label="Português" title="Português"><svg viewBox="0 0 600 400" aria-hidden="true"><path d="M0 0h600v400H0z" fill="#da291c"/><path d="M0 0h240v400H0z" fill="#046a38"/><circle cx="240" cy="200" r="80" fill="none" stroke="#ffe900" stroke-width="18"/><path d="M205 150h70v60a35 35 0 0 1-70 0z" fill="#fff" stroke="#da291c" stroke-width="12"/></svg></button>
+    </span>
+  </header>
+  <nav class="outcomes" id="nav" aria-label="Outcome type"></nav>
+  <div class="main">
+    <section class="card" id="inputsCard">
+      <h2><span id="inputsLab">Inputs</span><span class="t" id="panelTitle"></span></h2>
+      <div class="form-body" id="form"></div>
+    </section>
+    <section class="results" id="results"></section>
+  </div>
+  <p class="foot" id="foot"></p>
+</div>
+<script>
+/* ================= math utilities ================= */
+function qnorm(p){ // Acklam inverse normal CDF
+  if(p<=0) return -Infinity; if(p>=1) return Infinity;
+  const a=[-3.969683028665376e+01,2.209460984245205e+02,-2.759285104469687e+02,1.383577518672690e+02,-3.066479806614716e+01,2.506628277459239e+00],
+        b=[-5.447609879822406e+01,1.615858368580409e+02,-1.556989798598866e+02,6.680131188771972e+01,-1.328068155288572e+01],
+        c=[-7.784894002430293e-03,-3.223964580411365e-01,-2.400758277161838e+00,-2.549732539343734e+00,4.374664141464968e+00,2.938163982698783e+00],
+        d=[7.784695709041462e-03,3.224671290700398e-01,2.445134137142996e+00,3.754408661907416e+00];
+  const pl=0.02425;let q,r;
+  if(p<pl){q=Math.sqrt(-2*Math.log(p));return (((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5])/((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);}
+  if(p<=1-pl){q=p-0.5;r=q*q;return (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q/(((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);}
+  q=Math.sqrt(-2*Math.log(1-p));return -(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5])/((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);
+}
+function pnorm(z){
+  if(z<-8)return 0; if(z>8)return 1;
+  const x=Math.abs(z)/Math.SQRT2, t=1/(1+0.3275911*x);
+  const y=t*(0.254829592+t*(-0.284496736+t*(1.421413741+t*(-1.453152027+t*1.061405429))))*Math.exp(-x*x);
+  return z>=0?1-0.5*y:0.5*y;
+}
+function tinv(p,df){ // Cornish-Fisher expansion of Student-t quantile
+  if(df>2000) return qnorm(p);
+  const z=qnorm(p),z2=z*z,z3=z2*z,z5=z3*z2,z7=z5*z2,z9=z7*z2;
+  return z+(z3+z)/(4*df)+(5*z5+16*z3+3*z)/(96*df*df)+(3*z7+19*z5+17*z3-15*z)/(384*df**3)
+        +(79*z9+776*z7+1482*z5-1920*z3-945*z)/(92160*df**4);
+}
+function mulberry32(seed){let a=seed>>>0;return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function makeRng(seed){
+  const u=mulberry32(seed); let spare=null;
+  return {
+    unif:()=>u()||1e-12,
+    norm:function(){ if(spare!==null){const s=spare;spare=null;return s;}
+      let a=u()||1e-12,b=u();const R=Math.sqrt(-2*Math.log(a));
+      spare=R*Math.sin(2*Math.PI*b); return R*Math.cos(2*Math.PI*b); },
+    pois:function(m){ if(m<=0)return 0;
+      if(m<30){const L=Math.exp(-m);let k=0,p=1;do{k++;p*=u();}while(p>L);return k-1;}
+      return Math.max(0,Math.round(m+Math.sqrt(m)*this.norm()));},
+    gamma:function(shape){ // Marsaglia-Tsang, mean = shape
+      if(shape<1){return this.gamma(shape+1)*Math.pow(u()||1e-12,1/shape);}
+      const d=shape-1/3,c=1/Math.sqrt(9*d);
+      for(;;){let x,v;do{x=this.norm();v=1+c*x;}while(v<=0);
+        v=v*v*v;const uu=u()||1e-12;
+        if(Math.log(uu)<0.5*x*x+d-d*v+d*Math.log(v))return d*v;}
+    }
+  };
+}
+const fmt=(x,d=3)=>!isFinite(x)?"—":(Math.abs(x)>=100?x.toFixed(Math.max(0,d-2)):x.toFixed(d));
+const pct=(x,d=1)=>(100*x).toFixed(d)+"%";
+
+/* ================= shared design helpers ================= */
+function zAlpha(P){ return P.design==="ni" ? qnorm(1-P.alpha) : qnorm(1-P.alpha/2); }
+function ceilPair(n1,r){ n1=Math.max(2,Math.ceil(n1)); const n2=Math.max(2,Math.ceil(n1*r)); return {n1,n2,N:n1+n2}; }
+function solveNGeneric(P,powerFn){ // monotone search on n1
+  let lo=2, hi=4;
+  while(powerFn(hi,P)<P.targetPower && hi<4e6) hi*=2;
+  if(hi>=4e6) return null;
+  for(let i=0;i<60;i++){const mid=(lo+hi)/2; (powerFn(mid,P)<P.targetPower)?lo=mid:hi=mid;}
+  return hi;
+}
+
+/* ================= analytic power per outcome (n1 = control arm size) ================= */
+function powContinuous(n1,P){
+  const n2=n1*P.ratio, za=zAlpha(P);
+  const eff=P.design==="ni"?(P.mu2-P.mu1)+P.margin:Math.abs(P.mu2-P.mu1);
+  const sd=P.covAnalytic?P.sd*Math.sqrt(1-P.rho*P.rho):P.sd;
+  if(eff<=0)return 0;
+  return pnorm(eff/(sd*Math.sqrt(1/n1+1/n2))-za);
+}
+function powBinary(n1,P){
+  const n2=n1*P.ratio, za=zAlpha(P), p1=P.p1,p2=P.p2,q1=1-p1,q2=1-p2;
+  if(P.design==="ni"){
+    const eff=(p2-p1)+P.margin; if(eff<=0)return 0;
+    return pnorm(eff/Math.sqrt(p1*q1/n1+p2*q2/n2)-za);
+  }
+  const pb=(n1*p1+n2*p2)/(n1+n2), qb=1-pb, d=Math.abs(p1-p2);
+  return pnorm((d-za*Math.sqrt(pb*qb*(1/n1+1/n2)))/Math.sqrt(p1*q1/n1+p2*q2/n2));
+}
+function powOR(n1,P){
+  const n2=n1*P.ratio, za=zAlpha(P), p1=P.p1, p2=P.p2;
+  const se=Math.sqrt(1/(n1*p1*(1-p1))+1/(n2*p2*(1-p2)));
+  return pnorm(Math.abs(Math.log(P.or))/se-za);
+}
+function powRR(n1,P){
+  const n2=n1*P.ratio, za=zAlpha(P), p1=P.p1, p2=P.p2;
+  const se=Math.sqrt((1-p1)/(n1*p1)+(1-p2)/(n2*p2));
+  return pnorm(Math.abs(Math.log(P.rr))/se-za);
+}
+function hrEventProb(lam,a,f){ if(lam<=0)return 0; return 1-(Math.exp(-lam*f)-Math.exp(-lam*(a+f)))/(lam*a); }
+function powHR(n1,P){
+  const n2=n1*P.ratio, za=zAlpha(P);
+  const l1=Math.LN2/P.med1, l2=l1*P.hr;
+  const D=n1*hrEventProb(l1,P.acc,P.fup)+n2*hrEventProb(l2,P.acc,P.fup);
+  const pi1=n1/(n1+n2), pi2=1-pi1;
+  return pnorm(Math.abs(Math.log(P.hr))*Math.sqrt(D*pi1*pi2)-za);
+}
+function rmstMu(lam,tau){ return (1-Math.exp(-lam*tau))/lam; }
+function rmstAsyVar(lam,tau,a,f){ // Var of sqrt(n)*(muhat-mu), exponential + uniform accrual censoring
+  const M=800,h=tau/M; let v=0;
+  const S=t=>Math.exp(-lam*t);
+  const m=t=>(Math.exp(-lam*t)-Math.exp(-lam*tau))/lam;
+  const G=t=>t<=f?1:(t>=a+f?0:(a+f-t)/a);
+  for(let i=0;i<M;i++){const t=(i+0.5)*h,g=G(t); if(g<=0)continue;
+    v+=m(t)*m(t)*lam/(S(t)*g)*h;}
+  return v;
+}
+function powRMST(n1,P){
+  const n2=n1*P.ratio, za=zAlpha(P);
+  const l1=Math.LN2/P.med1, l2=Math.LN2/P.med2;
+  const d=Math.abs(rmstMu(l2,P.tau)-rmstMu(l1,P.tau));
+  const v1=rmstAsyVar(l1,P.tau,P.acc,P.fup), v2=rmstAsyVar(l2,P.tau,P.acc,P.fup);
+  if(d<=0)return 0;
+  return pnorm(d/Math.sqrt(v1/n1+v2/n2)-za);
+}
+function powCount(n1,P){
+  const n2=n1*P.ratio, za=zAlpha(P);
+  const l1=P.rate0,l2=P.rate0*P.rr,t=P.expo,k=P.disp;
+  const v1=1/(l1*t)+k, v2=1/(l2*t)+k;
+  return pnorm(Math.abs(Math.log(P.rr))/Math.sqrt(v1/n1+v2/n2)-za);
+}
+
+/* ================= small linear algebra ================= */
+function solve3(A,b){ // 3x3 gaussian elimination with partial pivot
+  const M=[[...A[0],b[0]],[...A[1],b[1]],[...A[2],b[2]]];
+  for(let c=0;c<3;c++){
+    let p=c;for(let r=c+1;r<3;r++)if(Math.abs(M[r][c])>Math.abs(M[p][c]))p=r;
+    if(Math.abs(M[p][c])<1e-12)return null;
+    [M[c],M[p]]=[M[p],M[c]];
+    for(let r=0;r<3;r++){if(r===c)continue;const fct=M[r][c]/M[c][c];
+      for(let cc=c;cc<4;cc++)M[r][cc]-=fct*M[c][cc];}
+  }
+  return [M[0][3]/M[0][0],M[1][3]/M[1][1],M[2][3]/M[2][2]];
+}
+function inv3diag(A){ // diagonal of inverse of sym 3x3
+  const [a,b,c]=A[0],[d,e,f]=[A[1][1],A[1][2],A[2][2]];
+  const det=a*(d*f-e*e)-b*(b*f-e*c)+c*(b*e-d*c);
+  if(Math.abs(det)<1e-12)return null;
+  return [(d*f-e*e)/det,(a*f-c*c)/det,(a*d-b*b)/det];
+}
+function inv3(A){ // full inverse of 3x3
+  const [[a,b,c],[d,e,f],[g,h,k]]=A;
+  const det=a*(e*k-f*h)-b*(d*k-f*g)+c*(d*h-e*g);
+  if(Math.abs(det)<1e-12)return null;
+  return [[(e*k-f*h)/det,(c*h-b*k)/det,(b*f-c*e)/det],
+          [(f*g-d*k)/det,(a*k-c*g)/det,(c*d-a*f)/det],
+          [(d*h-e*g)/det,(b*g-a*h)/det,(a*e-b*d)/det]];
+}
+function olsTest(y,g,x,n,P){ // fit y~1+g+x, return {tU:null,tA} style: t stat for g and df
+  let s1=n,sg=0,sx=0,sgg=0,sgx=0,sxx=0,sy=0,sgy=0,sxy=0;
+  for(let i=0;i<n;i++){sg+=g[i];sx+=x[i];sgg+=g[i]*g[i];sgx+=g[i]*x[i];sxx+=x[i]*x[i];
+    sy+=y[i];sgy+=g[i]*y[i];sxy+=x[i]*y[i];}
+  const A=[[s1,sg,sx],[sg,sgg,sgx],[sx,sgx,sxx]];
+  const beta=solve3(A,[sy,sgy,sxy]); if(!beta)return null;
+  let rss=0;for(let i=0;i<n;i++){const e=y[i]-beta[0]-beta[1]*g[i]-beta[2]*x[i];rss+=e*e;}
+  const df=n-3,s2=rss/df,dinv=inv3diag(A); if(!dinv)return null;
+  return {b:beta[1],se:Math.sqrt(s2*dinv[1]),df};
+}
+function logisticTest(y,g,x,n){ // IRLS y~1+g+x, Wald on g
+  let b0=0,b1=0,b2=0;
+  for(let it=0;it<12;it++){
+    let S=[[0,0,0],[0,0,0],[0,0,0]],U=[0,0,0];
+    for(let i=0;i<n;i++){
+      const eta=b0+b1*g[i]+b2*x[i];
+      const p=1/(1+Math.exp(-Math.max(-30,Math.min(30,eta))));
+      const w=Math.max(p*(1-p),1e-10), r=y[i]-p;
+      const v=[1,g[i],x[i]];
+      for(let a2=0;a2<3;a2++){U[a2]+=r*v[a2];for(let c2=a2;c2<3;c2++)S[a2][c2]+=w*v[a2]*v[c2];}
+    }
+    S[1][0]=S[0][1];S[2][0]=S[0][2];S[2][1]=S[1][2];
+    const d=solve3(S,U); if(!d)return null;
+    b0+=d[0];b1+=d[1];b2+=d[2];
+    if(Math.abs(b1)>15)return null; // separation guard
+    if(Math.abs(d[0])+Math.abs(d[1])+Math.abs(d[2])<1e-8){
+      const dinv=inv3diag(S); if(!dinv)return null;
+      return {z:b1/Math.sqrt(dinv[1])};
+    }
+    if(it===11){const dinv=inv3diag(S);if(!dinv)return null;return {z:b1/Math.sqrt(dinv[1])};}
+  }
+  return null;
+}
+function modPoissonTest(y,g,x,n){ // log-link Poisson y~1+g+x with robust (sandwich) SE — Zou 2004
+  let b=[Math.log(Math.max(1e-3,y.reduce((s,v)=>s+v,0)/n)),0,0];
+  for(let it=0;it<25;it++){
+    const A=[[0,0,0],[0,0,0],[0,0,0]],U=[0,0,0];
+    for(let i=0;i<n;i++){
+      const v=[1,g[i],x[i]],mu=Math.exp(Math.max(-30,Math.min(30,b[0]+b[1]*g[i]+b[2]*x[i])));
+      for(let a2=0;a2<3;a2++){U[a2]+=(y[i]-mu)*v[a2];for(let c2=0;c2<3;c2++)A[a2][c2]+=mu*v[a2]*v[c2];}
+    }
+    const d=solve3(A,U); if(!d)return null;
+    b=[b[0]+d[0],b[1]+d[1],b[2]+d[2]];
+    if(Math.abs(b[1])>15)return null; // separation guard
+    if(Math.abs(d[0])+Math.abs(d[1])+Math.abs(d[2])<1e-8||it===24){
+      const Bm=[[0,0,0],[0,0,0],[0,0,0]],Am=[[0,0,0],[0,0,0],[0,0,0]];
+      for(let i=0;i<n;i++){
+        const v=[1,g[i],x[i]],mu=Math.exp(Math.max(-30,Math.min(30,b[0]+b[1]*g[i]+b[2]*x[i]))),r2=(y[i]-mu)**2;
+        for(let a2=0;a2<3;a2++)for(let c2=0;c2<3;c2++){Am[a2][c2]+=mu*v[a2]*v[c2];Bm[a2][c2]+=r2*v[a2]*v[c2];}
+      }
+      const Ai=inv3(Am); if(!Ai)return null;
+      let vb=0; for(let a2=0;a2<3;a2++)for(let c2=0;c2<3;c2++)vb+=Ai[1][a2]*Bm[a2][c2]*Ai[c2][1];
+      return vb>0?{z:b[1]/Math.sqrt(vb)}:null;
+    }
+  }
+  return null;
+}
+/* log-rank + Cox (Breslow ties) */
+function logrank(time,status,grp,n){
+  const idx=Array.from({length:n},(_,i)=>i).sort((a,b)=>time[a]-time[b]);
+  let atRisk=n,atRisk1=0;
+  for(let i=0;i<n;i++)if(grp[i]===1)atRisk1++;
+  let O=0,E=0,V=0,i=0;
+  while(i<n){
+    const t=time[idx[i]];let d=0,d1=0,rem=0,rem1=0,j=i;
+    while(j<n&&time[idx[j]]===t){const s=idx[j];
+      if(status[s]){d++;if(grp[s]===1)d1++;}
+      rem++;if(grp[s]===1)rem1++;j++;}
+    if(d>0&&atRisk>1){
+      const f=atRisk1/atRisk;
+      O+=d1;E+=d*f;V+=d*f*(1-f)*(atRisk-d)/(atRisk-1);
+    }
+    atRisk-=rem;atRisk1-=rem1;i=j;
+  }
+  return V>0?(O-E)/Math.sqrt(V):0;
+}
+function coxFit2(time,status,x1,x2,n){ // Newton-Raphson, covariates (x1=arm, x2=baseline)
+  const idx=Array.from({length:n},(_,i)=>i).sort((a,b)=>time[a]-time[b]);
+  let b1=0,b2=0;
+  for(let it=0;it<20;it++){
+    let s0=0,s1a=0,s1b=0,s2aa=0,s2ab=0,s2bb=0;
+    let U1=0,U2=0,I11=0,I12=0,I22=0;
+    let i=n-1;
+    while(i>=0){
+      const t=time[idx[i]];let j=i;
+      while(j>=0&&time[idx[j]]===t){ // add ties into risk set first
+        const s=idx[j],e=Math.exp(Math.max(-30,Math.min(30,b1*x1[s]+b2*x2[s])));
+        s0+=e;s1a+=x1[s]*e;s1b+=x2[s]*e;
+        s2aa+=x1[s]*x1[s]*e;s2ab+=x1[s]*x2[s]*e;s2bb+=x2[s]*x2[s]*e;j--;
+      }
+      for(let k2=i;k2>j;k2--){const s=idx[k2];
+        if(status[s]&&s0>0){
+          const m1=s1a/s0,m2=s1b/s0;
+          U1+=x1[s]-m1;U2+=x2[s]-m2;
+          I11+=s2aa/s0-m1*m1;I12+=s2ab/s0-m1*m2;I22+=s2bb/s0-m2*m2;
+        }}
+      i=j;
+    }
+    const det=I11*I22-I12*I12; if(det<=1e-12)return null;
+    const d1=( I22*U1-I12*U2)/det, d2=(-I12*U1+I11*U2)/det;
+    b1+=d1;b2+=d2;
+    if(Math.abs(b1)>10)return null;
+    if(Math.abs(d1)+Math.abs(d2)<1e-8||it===19){
+      const det2=I11*I22-I12*I12; if(det2<=1e-12)return null;
+      return {z:b1/Math.sqrt(I22/det2)};
+    }
+  }
+  return null;
+}
+function kmRMST(time,status,n,tau){ // returns {mu,var} truncated at tau
+  const idx=Array.from({length:n},(_,i)=>i).sort((a,b)=>time[a]-time[b]);
+  let S=1,area=0,tPrev=0,atRisk=n,i=0;
+  const ev=[]; // {A? later, cumArea, nRisk,d}
+  while(i<n){
+    const t=time[idx[i]];let d=0,rem=0,j=i;
+    while(j<n&&time[idx[j]]===t){if(status[idx[j]])d++;rem++;j++;}
+    if(t>=tau){area+=S*(tau-tPrev);tPrev=tau;break;}
+    area+=S*(t-tPrev);tPrev=t;
+    if(d>0){ev.push({cumArea:area,nRisk:atRisk,d});S*=(1-d/atRisk);}
+    atRisk-=rem;i=j;
+  }
+  if(tPrev<tau)area+=S*(tau-tPrev);
+  let v=0;
+  for(const e of ev){const A=area-e.cumArea;
+    if(e.nRisk>e.d)v+=A*A*e.d/(e.nRisk*(e.nRisk-e.d));}
+  return {mu:area,va:v};
+}
+</script>
+<script>
+/* ================= per-replicate simulation engines ================= */
+function simContinuous(P,n1,n2,rng){
+  const n=n1+n2, cov=P.covOn, rho=cov?P.rho:0, s1r=Math.sqrt(1-rho*rho);
+  const y=new Float64Array(n),g=new Float64Array(n),x=cov?new Float64Array(n):null;
+  let m1=0,m2=0;
+  for(let i=0;i<n;i++){
+    const arm=i<n1?0:1, mu=arm?P.mu2:P.mu1;
+    let yi;
+    if(cov){const xi=rng.norm();x[i]=xi;yi=mu+P.sd*(rho*xi+s1r*rng.norm());}
+    else yi=mu+P.sd*rng.norm();
+    y[i]=yi;g[i]=arm;arm?m2+=yi:m1+=yi;
+  }
+  m1/=n1;m2/=n2;
+  let v1=0,v2=0;
+  for(let i=0;i<n1;i++)v1+=(y[i]-m1)**2;
+  for(let i=n1;i<n;i++)v2+=(y[i]-m2)**2;
+  v1/=(n1-1);v2/=(n2-1);
+  const se=Math.sqrt(v1/n1+v2/n2);
+  const dfW=(v1/n1+v2/n2)**2/((v1/n1)**2/(n1-1)+(v2/n2)**2/(n2-1));
+  let rejU;
+  if(P.design==="ni") rejU=((m2-m1+P.margin)/se>tinv(1-P.alpha,dfW))?1:0;
+  else rejU=(Math.abs(m2-m1)/se>tinv(1-P.alpha/2,dfW))?1:0;
+  let rejA=null;
+  if(cov){
+    const r=olsTest(y,g,x,n,P);
+    rejA=r?((Math.abs(r.b)/r.se>tinv(1-P.alpha/2,r.df))?1:0):0;
+  }
+  return {rejU,rejA};
+}
+function simBinaryLike(P,n1,n2,rng,mode){ // mode: 'rd' | 'or' | 'rr'
+  const n=n1+n2, cov=P.covOn, rho=cov?P.rho:0, s1r=Math.sqrt(1-rho*rho);
+  const zp1=qnorm(P.p1), zp2=qnorm(P.p2);
+  let a=0,c=0; // events in control (a) and treatment (c)
+  const y=cov?new Float64Array(n):null,g=cov?new Float64Array(n):null,x=cov?new Float64Array(n):null;
+  for(let i=0;i<n;i++){
+    const arm=i<n1?0:1, thr=arm?zp2:zp1;
+    let yi;
+    if(cov){const xi=rng.norm();x[i]=xi;yi=(rho*xi+s1r*rng.norm()<thr)?1:0;y[i]=yi;g[i]=arm;}
+    else yi=(rng.norm()<thr)?1:0;
+    if(yi){arm?c++:a++;}
+  }
+  const p1h=a/n1,p2h=c/n2;
+  let rejU=0;
+  if(mode==='rr'){
+    let A=a,C=c,m1=n1,m2=n2;
+    if(A===0||C===0||A===n1||C===n2){A+=.5;C+=.5;m1+=1;m2+=1;}
+    const lnrr=Math.log((C/m2)/(A/m1)), serr=Math.sqrt(1/A-1/m1+1/C-1/m2);
+    rejU=(Math.abs(lnrr/serr)>qnorm(1-P.alpha/2))?1:0;
+  }else if(mode==='or'){
+    let A=a,B=n1-a,C=c,D=n2-c;
+    if(A===0||B===0||C===0||D===0){A+=.5;B+=.5;C+=.5;D+=.5;}
+    const lnor=Math.log((C*B)/(A*D)), seor=Math.sqrt(1/A+1/B+1/C+1/D);
+    rejU=(Math.abs(lnor/seor)>qnorm(1-P.alpha/2))?1:0;
+  }else if(P.design==="ni"){
+    const se=Math.sqrt(Math.max(p1h*(1-p1h),1e-9)/n1+Math.max(p2h*(1-p2h),1e-9)/n2);
+    rejU=(((p2h-p1h)+P.margin)/se>qnorm(1-P.alpha))?1:0;
+  }else{
+    const pb=(a+c)/n, se0=Math.sqrt(pb*(1-pb)*(1/n1+1/n2));
+    rejU=(se0>0&&Math.abs(p2h-p1h)/se0>qnorm(1-P.alpha/2))?1:0;
+  }
+  let rejA=null;
+  if(cov){
+    const r=mode==='rr'?modPoissonTest(y,g,x,n):logisticTest(y,g,x,n);
+    rejA=r?((Math.abs(r.z)>qnorm(1-P.alpha/2))?1:0):0;
+  }
+  return {rejU,rejA};
+}
+function simHR(P,n1,n2,rng){
+  const n=n1+n2, cov=P.covOn, rho=cov?P.rho:0;
+  const gamma=cov?rho*Math.sqrt((Math.PI*Math.PI/6)/(1-rho*rho)):0;
+  const l1=Math.LN2/P.med1,l2=l1*P.hr;
+  const time=new Float64Array(n),status=new Uint8Array(n),grp=new Uint8Array(n),xv=cov?new Float64Array(n):null;
+  for(let i=0;i<n;i++){
+    const arm=i<n1?0:1,l=arm?l2:l1;
+    const entry=rng.unif()*P.acc;
+    let lam=l;
+    if(cov){const xi=rng.norm();xv[i]=xi;lam=l*Math.exp(gamma*xi);}
+    const T=-Math.log(rng.unif())/lam, C=P.acc+P.fup-entry;
+    time[i]=Math.min(T,C);status[i]=T<=C?1:0;grp[i]=arm;
+  }
+  const z=logrank(time,status,grp,n);
+  const rejU=(Math.abs(z)>qnorm(1-P.alpha/2))?1:0;
+  let rejA=null;
+  if(cov){
+    const r=coxFit2(time,status,Array.from(grp),Array.from(xv),n);
+    rejA=r?((Math.abs(r.z)>qnorm(1-P.alpha/2))?1:0):0;
+  }
+  return {rejU,rejA};
+}
+function simRMST(P,n1,n2,rng){
+  const l1=Math.LN2/P.med1,l2=Math.LN2/P.med2;
+  const t1=new Float64Array(n1),s1=new Uint8Array(n1),t2=new Float64Array(n2),s2=new Uint8Array(n2);
+  for(let i=0;i<n1;i++){const entry=rng.unif()*P.acc,T=-Math.log(rng.unif())/l1,C=P.acc+P.fup-entry;
+    t1[i]=Math.min(T,C);s1[i]=T<=C?1:0;}
+  for(let i=0;i<n2;i++){const entry=rng.unif()*P.acc,T=-Math.log(rng.unif())/l2,C=P.acc+P.fup-entry;
+    t2[i]=Math.min(T,C);s2[i]=T<=C?1:0;}
+  const r1=kmRMST(t1,s1,n1,P.tau),r2=kmRMST(t2,s2,n2,P.tau);
+  const se=Math.sqrt(r1.va+r2.va);
+  const rejU=(se>0&&Math.abs(r2.mu-r1.mu)/se>qnorm(1-P.alpha/2))?1:0;
+  return {rejU,rejA:null};
+}
+function simCount(P,n1,n2,rng){
+  const l1=P.rate0,l2=P.rate0*P.rr,t=P.expo,k=P.disp;
+  let s1=0,ss1=0,s2=0,ss2=0;
+  for(let i=0;i<n1;i++){const fr=k>0?rng.gamma(1/k)*k:1;const y=rng.pois(l1*t*fr);s1+=y;ss1+=y*y;}
+  for(let i=0;i<n2;i++){const fr=k>0?rng.gamma(1/k)*k:1;const y=rng.pois(l2*t*fr);s2+=y;ss2+=y*y;}
+  const m1=s1/n1,m2=s2/n2;
+  if(m1<=0||m2<=0)return {rejU:0,rejA:null};
+  const v1=(ss1-n1*m1*m1)/(n1-1),v2=(ss2-n2*m2*m2)/(n2-1);
+  const se=Math.sqrt(v1/(n1*m1*m1)+v2/(n2*m2*m2));
+  const rejU=(se>0&&Math.abs(Math.log(m2/m1))/se>qnorm(1-P.alpha/2))?1:0;
+  return {rejU,rejA:null};
+}
+const SIMFN={cont:simContinuous,bin:(P,a,b,r)=>simBinaryLike(P,a,b,r,'rd'),or:(P,a,b,r)=>simBinaryLike(P,a,b,r,'or'),rr:(P,a,b,r)=>simBinaryLike(P,a,b,r,'rr'),hr:simHR,rmst:simRMST,count:simCount};
+const POWFN={cont:powContinuous,bin:powBinary,or:powOR,rr:powRR,hr:powHR,rmst:powRMST,count:powCount};
+const SIMCHUNK={cont:200,bin:120,or:120,rr:120,hr:40,rmst:60,count:150};
+
+const tick=()=>new Promise(r=>setTimeout(r,0));
+async function runSimBatch(P,n1,n2,nsim,seed,onProg){
+  const rng=makeRng(seed);let rU=0,rA=0,nA=0;
+  const ch=SIMCHUNK[P.outcome];
+  for(let i=0;i<nsim;i++){
+    const res=SIMFN[P.outcome](P,n1,n2,rng);
+    rU+=res.rejU;
+    if(res.rejA!==null){rA+=res.rejA;nA++;}
+    if((i+1)%ch===0){onProg((i+1)/nsim);await tick();}
+  }
+  onProg(1);
+  return {pU:rU/nsim,pA:nA?rA/nA:null,nsim};
+}
+async function simSolveN(P,onProg){
+  const za=zAlpha(P);
+  let n1f=solveNGeneric(P,POWFN[P.outcome]);
+  if(n1f===null)return null;
+  let n1=Math.max(4,Math.ceil(n1f));
+  const searchSim=Math.min(P.nsim,Math.max(400,Math.round(P.nsim/2)));
+  const trace=[];
+  for(let pass=0;pass<4;pass++){
+    const pr=ceilPair(n1,P.ratio);
+    const res=await runSimBatch(P,pr.n1,pr.n2,searchSim,P.seed+11*pass+1,
+      f=>onProg(f,`Search pass ${pass+1}`));
+    let p=P.covOn&&res.pA!==null?res.pA:res.pU;
+    trace.push({n1:pr.n1,p});
+    p=Math.min(0.995,Math.max(0.02,p));
+    const mce=1.96*Math.sqrt(p*(1-p)/searchSim);
+    if(Math.abs(p-P.targetPower)<=Math.max(0.015,mce*0.75))break;
+    const num=za+qnorm(P.targetPower),den=za+qnorm(p);
+    const ratio=den>0.05?(num/den)**2:4;
+    const next=Math.max(4,Math.ceil(n1*Math.min(6,Math.max(0.17,ratio))));
+    if(next===n1)break;
+    n1=next;
+  }
+  const pr=ceilPair(n1,P.ratio);
+  const fin=await runSimBatch(P,pr.n1,pr.n2,P.nsim,P.seed+97,f=>onProg(f,"Confirming"));
+  return {...pr,...fin,trace};
+}
+</script>
+<script>
+/* ================= translations ================= */
+const nf=(x,d=3)=>isFinite(x)?String(+(+x).toFixed(d)):'—';
+const pc=p=>nf(100*p,1)+'%';
+// Language-neutral values used by every paper template
+function effVals(P,R){
+  return {d:nf(Math.abs(P.mu2-P.mu1)),ds:nf(P.mu2-P.mu1),mu1:nf(P.mu1),mu2:nf(P.mu2),sd:nf(P.sd),delta:nf(Math.abs(P.mu2-P.mu1)/P.sd,2),
+    m:P.outcome==='bin'?nf(100*P.margin,1):nf(P.margin),p1:pc(P.p1),p2:pc(P.p2),rd:nf(100*Math.abs(P.p2-P.p1),1),
+    or:nf(P.or,2),rr:nf(P.rr,2),hr:nf(P.hr,2),med1:nf(P.med1),med2:nf(P.med2),acc:nf(P.acc),fup:nf(P.fup),tau:nf(P.tau),
+    D:R.D!==undefined?Math.round(R.D):'',dr:R.effRMST!==undefined?nf(Math.abs(R.effRMST),2):'',rate0:nf(P.rate0),expo:nf(P.expo),k:nf(P.disp)};
+}
+function paperNums(R){
+  const {P}=R,isSim=P.method==='sim';
+  const sp=isSim?(P.covOn&&R.pA!=null?R.pA:R.pU):null,h=isSim?1.96*Math.sqrt(sp*(1-sp)/R.nsim):0;
+  return {N:R.N,n1:R.n1,n2:R.n2,r:nf(P.ratio,2),eq:R.n1===R.n2,
+    pow:nf(100*(isSim?sp:(P.solve==='n'?P.targetPower:R.powerAnalytic)),1),atLeast:P.solve==='n'&&!isSim,
+    alpha:nf(P.alpha,4),one:P.design==='ni',isSim,sp:isSim?nf(100*sp,1):'',lo:isSim?nf(100*Math.max(0,sp-h),1):'',hi:isSim?nf(100*Math.min(1,sp+h),1):'',
+    nsim:R.nsim,seed:R.seedFixed?P.seed:null,cov:isSim&&P.covOn&&R.pA!=null,rho:nf(P.rho,2),pU:isSim?nf(100*R.pU,1):'',
+    drop:P.solve==='n'&&P.dropout>0?nf(P.dropout,1):null,Nrand:R.Nrand,hr:P.outcome==='hr'};
+}
+function testName(L,P){
+  const t=L.tests[P.outcome==='bin'&&P.design==='ni'?'binNI':P.outcome];
+  return P.method==='sim'?(P.covOn?t[2]:t[1]):t[0];
+}
+const URL_SELF='https://atpinto.github.io/ssize/';
+
+const I18N={
+/* ---------------- English ---------------- */
+en:{
+ title:'Sample size and power',
+ sub:'Two-arm randomised trials · closed-form formula or simulation, with optional baseline-covariate adjustment',
+ foot:'Developed by <a href="https://profiles.sydney.edu.au/armando.teixeira-pinto">Armando Teixeira-Pinto</a> and Claude Fable 5',
+ lang:'Language',outcomeAria:'Outcome type',inputs:'Inputs',outcome:n=>n,
+ out:{cont:['Continuous','Difference in means'],bin:['Binary','Risk difference'],or:['Odds ratio','Logistic'],rr:['Relative risk','Risk ratio'],hr:['Hazard ratio','Log-rank / Cox'],rmst:['RMST','Restricted mean survival'],count:['Count / rate','Poisson or neg. binomial']},
+ fld:{'cont.mu1':['Control mean','μ₁'],'cont.mu2':['Treatment mean','μ₂'],'cont.sd':['Common SD','σ'],'cont.margin':['Non-inferiority margin','m > 0, higher = better'],
+  'bin.p1':['Control proportion','p₁'],'bin.p2':['Treatment proportion','p₂'],'bin.margin':['Non-inferiority margin','m > 0, risk scale'],
+  'or.p1':['Control proportion','p₁'],'or.or':['Odds ratio','treatment vs control'],
+  'rr.p1':['Control risk','p₁'],'rr.rr':['Relative risk','treatment vs control'],
+  'hr.hr':['Hazard ratio','treatment vs control'],'hr.med1':['Control median survival','time units'],'hr.acc':['Accrual period','uniform entry'],'hr.fup':['Minimum follow-up','after accrual ends'],
+  'rmst.med1':['Control median survival','exponential'],'rmst.med2':['Treatment median survival','exponential'],'rmst.tau':['Truncation time τ','≤ accrual + follow-up'],'rmst.acc':['Accrual period','uniform entry'],'rmst.fup':['Minimum follow-up','after accrual ends'],
+  'count.rate0':['Control event rate','per time unit'],'count.rr':['Rate ratio','treatment vs control'],'count.expo':['Follow-up per patient','time units'],'count.disp':['Dispersion k','0 = Poisson; var μ+kμ²']},
+ hyp:'Hypothesis',sup:'Superiority',ni:'Non-inferiority',ea:'Error and allocation',one:'one-sided',two:'two-sided',tpow:'Target power',Ntot:'Total N',
+ alloc:'Allocation T : C',drop:'Dropout %',dropH:'inflates N',solve:'Solve for',sN:'Sample size',sP:'Power at given N',meth:'Calculation method',
+ formula:'Formula',sim:'Simulation',mc:'Monte Carlo',reps:'Replicates',seed:'Seed',seedH:'blank = random',cov:'Baseline covariate',
+ covAdj:'Adjust the analysis for a baseline covariate',rho:'Correlation ρ with outcome',covNI:'Covariate adjustment is available for superiority designs only.',
+ runN:'Calculate sample size',runP:'Calculate power',empty1:'Set the design, then press Calculate.',
+ empty2:'Formula mode gives the closed-form answer instantly; simulation mode estimates power by Monte Carlo and can add a correlated baseline covariate to the analysis.',
+ E:{alpha:'α must be in (0, 0.3).',pow:'Target power must be between α and 1.',N:'Total N must be at least 4.',ratio:'Allocation ratio must be between 0.2 and 5.',
+  sd:'SD must be positive.',eqMeans:'Means are equal — no effect to detect.',margin:'Non-inferiority margin must be positive.',contNI:'Expected difference + margin must be positive (higher is better).',
+  props:'Proportions must be strictly between 0 and 1.',eqProps:'Proportions are equal — no effect to detect.',binNI:'Expected difference + margin must be positive.',
+  p1:'Control proportion must be in (0, 1).',or:'OR must be positive and ≠ 1.',rr:'RR must be positive and ≠ 1.',rrImpl:v=>`RR × p₁ = ${v} — the implied treatment risk must be below 1.`,
+  hr:'HR must be positive and ≠ 1.',hrPer:'Median and study periods must be positive.',rmstPer:'Medians, τ and study periods must be positive.',
+  eqMed:'Medians are equal — no RMST difference under the exponential model.',tau:'τ cannot exceed accrual + follow-up: no patient can be observed up to τ.',
+  rate:'Rate and follow-up must be positive.',rateR:'Rate ratio must be positive and ≠ 1.',disp:'Dispersion cannot be negative.',
+  infeasible:'No feasible sample size below 4 million per arm — the effect is too small.'},
+ W:{cells:'Expected cell count below 5 — the normal approximation is unreliable here; prefer simulation.',
+  lowCount:'Very low expected counts per patient — the log-rate normal approximation is rough; trust the simulation over the formula.',
+  fup0:'Zero minimum follow-up: patients recruited late contribute almost no information.',
+  tauMax:'τ equals the maximum follow-up — the KM tail at τ rests on very few patients; simulation results may be unstable.'},
+ R:{ctrl:'Control arm',trt:'Treatment arm',fpow:'Formula power',spow:'Simulated power',unadj:' (unadj.)',sadj:'Simulated, adjusted',events:'Expected events',
+  eff:{cont:'Standardised effect',bin:'Risk difference',or:'p₂ implied by OR',rr:'p₂ implied by RR',hr:'Hazard ratio',rmst:'ΔRMST at τ',count:'Rate ratio'},
+  tunits:'time units',totalN:'Total sample size',rand:(n,d)=>`randomise <strong>${n}</strong> to allow for ${d}% dropout`,noDrop:'no dropout inflation applied',
+  powerAt:(sim,N)=>`${sim?'Simulated power':'Power'} at N = ${N}`,reps:'replicates',fig:'Power against total sample size',
+  note:sim=>`Curve: closed-form approximation. Point: this design${sim?' (simulation; bar = 95% binomial CI)':''}.`,
+  xax:'Total N analysed',yax:'Power (%)',dsF:'Formula (unadjusted)',dsA:'Formula, ANCOVA (1−ρ²)',dsT:'Target power',dsSU:'Simulated (unadjusted)',dsSA:'Simulated (adjusted)',dsD:'This design',at:'at N =',
+  cov:'Adjusting for the baseline covariate',covPP:'power from adjustment at this N.',
+  covSave:p=>`About the same power with <strong>~${p}% fewer patients</strong> (normal-approximation equivalence).`,
+  covCond:'For OR and HR the adjusted estimand is conditional, not marginal — part of the gain comes from de-attenuation rather than variance reduction.',
+  unadjL:'Unadjusted',adjL:'Adjusted for X',ci:'95% CI',methods:'Methods and assumptions',paper:'Text for your paper',copy:'Copy',copied:'Copied ✓',with:'with',ev:'events'},
+ tests:{cont:['a two-sample test for the difference in means',"Welch's t-test",'analysis of covariance (ANCOVA)'],
+  bin:['a two-proportion z-test','a two-proportion z-test','logistic regression'],binNI:['a Wald test for the risk difference','a Wald test for the risk difference',''],
+  or:['a Wald test on the log odds ratio','a Wald test on the log odds ratio','logistic regression'],
+  rr:['a Wald test on the log relative risk','a Wald test on the log relative risk','modified Poisson regression with robust standard errors'],
+  hr:['the log-rank test','the log-rank test','Cox proportional hazards regression'],
+  rmst:['a z-test comparing Kaplan–Meier estimates of the RMST','a z-test comparing Kaplan–Meier estimates of the RMST',''],
+  count:['a Wald test on the log rate ratio','a Wald test on the log rate ratio','']},
+ eff(P,R){const v=effVals(P,R);switch(P.outcome){
+  case 'cont':return P.design==='ni'
+    ?`demonstrate non-inferiority of the treatment with a non-inferiority margin of ${v.m}, assuming a true difference in means (treatment − control) of ${v.ds} and a common standard deviation of ${v.sd}`
+    :`detect a difference in means of ${v.d} (${v.mu1} in the control arm vs ${v.mu2} in the treatment arm), assuming a common standard deviation of ${v.sd} (standardised effect size ${v.delta})`;
+  case 'bin':return P.design==='ni'
+    ?`demonstrate non-inferiority with a margin of ${v.m} percentage points on the risk-difference scale, assuming true proportions of ${v.p1} in the control arm and ${v.p2} in the treatment arm`
+    :`detect a change in the proportion with the outcome from ${v.p1} in the control arm to ${v.p2} in the treatment arm (a risk difference of ${v.rd} percentage points)`;
+  case 'or':return `detect an odds ratio of ${v.or}, assuming a proportion of ${v.p1} in the control arm (implying ${v.p2} in the treatment arm)`;
+  case 'rr':return `detect a relative risk of ${v.rr}, assuming a risk of ${v.p1} in the control arm (implying ${v.p2} in the treatment arm)`;
+  case 'hr':return `detect a hazard ratio of ${v.hr}, assuming exponentially distributed survival times with a median of ${v.med1} time units in the control arm, uniform recruitment over ${v.acc} time units and a minimum follow-up of ${v.fup} time units (about ${v.D} expected events)`;
+  case 'rmst':return `detect a difference of ${v.dr} time units in restricted mean survival time (RMST) up to τ = ${v.tau}, assuming exponential survival with medians of ${v.med1} (control) and ${v.med2} (treatment), uniform recruitment over ${v.acc} and a minimum follow-up of ${v.fup} time units`;
+  case 'count':return `detect a rate ratio of ${v.rr}, assuming a control event rate of ${v.rate0} per time unit, ${v.expo} time units of follow-up per participant and ${P.disp>0?`negative binomial overdispersion (k = ${v.k})`:'Poisson-distributed counts'}`;}},
+ paper(R){const {P}=R,d=paperNums(R);
+  const arms=`${d.n1} in the control arm and ${d.n2} in the treatment arm${d.eq?'':`; treatment:control allocation ratio ${d.r}:1`}`;
+  const pw=`${d.atLeast?'at least ':''}${d.pow}% power`,tail=`${this.eff(P,R)}, using ${testName(this,P)} at a ${d.one?'one':'two'}-sided significance level of ${d.alpha}.`;
+  let s=P.solve==='n'?`A total of ${d.N} participants (${arms}) will provide ${pw} to ${tail}`:`With a total of ${d.N} participants (${arms}), the study will have ${pw} to ${tail}`;
+  if(d.cov)s+=` The analysis adjusts for a baseline covariate assumed to have a correlation of ${d.rho} with the outcome; without adjustment the simulated power would be ${d.pU}%.`;
+  s+=d.isSim?` Power was estimated by Monte Carlo simulation with ${d.nsim} simulated trials${d.seed!=null?` (random seed ${d.seed})`:''}; the 95% CI for the estimated power is ${d.lo}% to ${d.hi}%.`
+    :` The calculation used the closed-form normal approximation${d.hr?' (Schoenfeld’s formula for the required number of events)':''}.`;
+  if(d.drop)s+=` To allow for ${d.drop}% loss to follow-up, ${d.Nrand} participants will be randomised.`;
+  return s+` Calculations were done with the sample size and power calculator by Teixeira-Pinto (${URL_SELF}).`;},
+ M:{cont:`<p><strong>Formula.</strong> Two-sample normal approximation for a difference in means with unequal allocation; superiority uses two-sided α, non-inferiority tests H₀: μ<sub>T</sub>−μ<sub>C</sub> ≤ −m at one-sided α (higher assumed better).</p>
+<p><strong>Simulation.</strong> Normal outcomes analysed by Welch's t-test. With a baseline covariate on, (X, Y) are bivariate normal with correlation ρ and the adjusted analysis is ANCOVA (Y ~ arm + X). The residual SD shrinks by √(1−ρ²), which is exactly the closed-form gain — the dashed analytic ANCOVA curve is overlaid so you can see the simulation agree with it.</p>`,
+bin:`<p><strong>Formula.</strong> Two-proportion z-test with the pooled-variance null (superiority) or unpooled Wald with a shifted null (non-inferiority, risk-difference scale, higher p = better).</p>
+<p><strong>Simulation.</strong> Outcomes are generated from a latent-probit model: Y = 1 if ρX + √(1−ρ²)Z falls below Φ⁻¹(p<sub>arm</sub>), so ρ is the latent-scale (biserial) correlation between covariate and outcome — the observable point-biserial correlation is smaller. Adjusted analysis is logistic regression (Wald test on the arm coefficient). The gain from adjustment is smaller than for continuous outcomes and works through non-collapsibility: adjustment moves the OR away from 1 rather than shrinking the SE.</p>`,
+or:`<p><strong>Formula.</strong> Wald test on log OR; p₂ is derived from the control proportion and the OR. Sample size uses Var(ln OR) ≈ 1/(n₁p₁q₁) + 1/(n₂p₂q₂).</p>
+<p><strong>Simulation.</strong> Same latent-probit generation as the binary outcome; unadjusted analysis is the 2×2 Wald log-OR (with a 0.5 continuity correction if a cell is empty), adjusted analysis is logistic regression. The conditional (adjusted) OR is larger in magnitude than the marginal OR — non-collapsibility — so power can change even though the covariate is balanced by randomisation.</p>`,
+rr:`<p><strong>Formula.</strong> Wald test on log RR; p₂ = RR·p₁ (must be below 1). Sample size uses the delta-method variance Var(ln RR) ≈ q₁/(n₁p₁) + q₂/(n₂p₂).</p>
+<p><strong>Simulation.</strong> Same latent-probit generation as the binary outcome; unadjusted analysis is the 2×2 Wald log-RR (0.5 added to each event count and 1 to each arm size if any arm has zero or all events), adjusted analysis is modified Poisson regression — log link with a robust sandwich variance (Zou 2004), which avoids the convergence failures of log-binomial models. Unlike the OR, the RR is collapsible, so adjustment works mainly through variance reduction; under the latent-probit model the covariate-conditional RR is not exactly constant, so treat the adjusted power as indicative.</p>`,
+hr:`<p><strong>Formula.</strong> Schoenfeld's events formula D = (z<sub>1−α/2</sub>+z<sub>1−β</sub>)²/(π₁π₂ ln²HR), converted to N via event probabilities under exponential survival, uniform accrual over the accrual period, and administrative censoring at accrual + follow-up.</p>
+<p><strong>Simulation.</strong> Exponential event times with staggered entry; unadjusted analysis is the log-rank test, adjusted analysis a two-covariate Cox model (Breslow ties, Newton–Raphson). The covariate acts multiplicatively on the hazard with coefficient calibrated so that corr(X, log T) = ρ; the entered HR is the covariate-conditional HR, so the unadjusted (marginal) HR is attenuated toward 1 — this is why the adjusted Cox analysis can be visibly more powerful.</p>`,
+rmst:`<p><strong>Formula.</strong> Difference in restricted mean survival time to τ under exponential survival. The asymptotic variance of the KM-based RMST, ∫₀^τ [∫<sub>t</sub>^τ S]² dΛ/(S·G), is integrated numerically with G(t) the censoring survival implied by uniform accrual plus administrative censoring.</p>
+<p><strong>Simulation.</strong> Kaplan–Meier RMST in each arm with the standard (Greenwood-type) variance and a z-test on the difference — i.e. the unadjusted analysis of Royston–Parmar / Uno and colleagues. Covariate adjustment (e.g. via pseudo-observations) is not implemented for RMST.</p>`,
+count:`<p><strong>Formula.</strong> Wald test on the log rate ratio with Var(ln λ̂) ≈ (1/(λt)+k)/n per arm, where k is the negative-binomial dispersion (k = 0 gives Poisson).</p>
+<p><strong>Simulation.</strong> Counts are Poisson–gamma (NB) draws; the test is a robust delta-method z on the log ratio of mean counts using empirical variances, so it stays honest under overdispersion.</p>`,
+mc:`<p><strong>Monte Carlo error.</strong> Simulated power is reported with a 95% binomial interval; with 1,000 replicates the half-width near 80% power is about ±2.5 percentage points. Fix the seed to make runs reproducible.</p>`}
+},
+/* ---------------- Español ---------------- */
+es:{
+ title:'Tamaño muestral y potencia',
+ sub:'Ensayos aleatorizados de dos grupos · fórmula cerrada o simulación, con ajuste opcional por una covariable basal',
+ foot:'Desarrollado por <a href="https://profiles.sydney.edu.au/armando.teixeira-pinto">Armando Teixeira-Pinto</a> y Claude Fable 5',
+ lang:'Idioma',outcomeAria:'Tipo de desenlace',inputs:'Datos',outcome:n=>n,
+ out:{cont:['Continuo','Diferencia de medias'],bin:['Binario','Diferencia de riesgos'],or:['Odds ratio','Logístico'],rr:['Riesgo relativo','Razón de riesgos'],hr:['Hazard ratio','Log-rank / Cox'],rmst:['RMST','Supervivencia media restringida'],count:['Recuento / tasa','Poisson o binomial negativa']},
+ fld:{'cont.mu1':['Media del control','μ₁'],'cont.mu2':['Media del tratamiento','μ₂'],'cont.sd':['DE común','σ'],'cont.margin':['Margen de no inferioridad','m > 0, más alto = mejor'],
+  'bin.p1':['Proporción del control','p₁'],'bin.p2':['Proporción del tratamiento','p₂'],'bin.margin':['Margen de no inferioridad','m > 0, escala de riesgo'],
+  'or.p1':['Proporción del control','p₁'],'or.or':['Odds ratio','tratamiento vs control'],
+  'rr.p1':['Riesgo del control','p₁'],'rr.rr':['Riesgo relativo','tratamiento vs control'],
+  'hr.hr':['Hazard ratio','tratamiento vs control'],'hr.med1':['Mediana de supervivencia del control','unidades de tiempo'],'hr.acc':['Periodo de reclutamiento','entrada uniforme'],'hr.fup':['Seguimiento mínimo','tras el reclutamiento'],
+  'rmst.med1':['Mediana de supervivencia del control','exponencial'],'rmst.med2':['Mediana de supervivencia del tratamiento','exponencial'],'rmst.tau':['Tiempo de truncamiento τ','≤ reclutamiento + seguimiento'],'rmst.acc':['Periodo de reclutamiento','entrada uniforme'],'rmst.fup':['Seguimiento mínimo','tras el reclutamiento'],
+  'count.rate0':['Tasa de eventos del control','por unidad de tiempo'],'count.rr':['Razón de tasas','tratamiento vs control'],'count.expo':['Seguimiento por paciente','unidades de tiempo'],'count.disp':['Dispersión k','0 = Poisson; var μ+kμ²']},
+ hyp:'Hipótesis',sup:'Superioridad',ni:'No inferioridad',ea:'Error y asignación',one:'unilateral',two:'bilateral',tpow:'Potencia objetivo',Ntot:'N total',
+ alloc:'Asignación T : C',drop:'Abandonos %',dropH:'aumenta N',solve:'Calcular',sN:'Tamaño muestral',sP:'Potencia para un N dado',meth:'Método de cálculo',
+ formula:'Fórmula',sim:'Simulación',mc:'Monte Carlo',reps:'Réplicas',seed:'Semilla',seedH:'vacío = aleatoria',cov:'Covariable basal',
+ covAdj:'Ajustar el análisis por una covariable basal',rho:'Correlación ρ con el desenlace',covNI:'El ajuste por covariables solo está disponible para diseños de superioridad.',
+ runN:'Calcular tamaño muestral',runP:'Calcular potencia',empty1:'Defina el diseño y pulse Calcular.',
+ empty2:'El modo fórmula da la respuesta analítica al instante; el modo simulación estima la potencia por Monte Carlo y puede añadir al análisis una covariable basal correlacionada.',
+ E:{alpha:'α debe estar en (0, 0.3).',pow:'La potencia objetivo debe estar entre α y 1.',N:'El N total debe ser al menos 4.',ratio:'La razón de asignación debe estar entre 0.2 y 5.',
+  sd:'La DE debe ser positiva.',eqMeans:'Las medias son iguales: no hay efecto que detectar.',margin:'El margen de no inferioridad debe ser positivo.',contNI:'La diferencia esperada + el margen debe ser positiva (más alto = mejor).',
+  props:'Las proporciones deben estar estrictamente entre 0 y 1.',eqProps:'Las proporciones son iguales: no hay efecto que detectar.',binNI:'La diferencia esperada + el margen debe ser positiva.',
+  p1:'La proporción del control debe estar en (0, 1).',or:'La OR debe ser positiva y ≠ 1.',rr:'El RR debe ser positivo y ≠ 1.',rrImpl:v=>`RR × p₁ = ${v}: el riesgo implícito del tratamiento debe ser menor que 1.`,
+  hr:'El HR debe ser positivo y ≠ 1.',hrPer:'La mediana y los periodos del estudio deben ser positivos.',rmstPer:'Las medianas, τ y los periodos del estudio deben ser positivos.',
+  eqMed:'Las medianas son iguales: no hay diferencia de RMST con el modelo exponencial.',tau:'τ no puede superar reclutamiento + seguimiento: ningún paciente se observaría hasta τ.',
+  rate:'La tasa y el seguimiento deben ser positivos.',rateR:'La razón de tasas debe ser positiva y ≠ 1.',disp:'La dispersión no puede ser negativa.',
+  infeasible:'No hay un tamaño muestral factible por debajo de 4 millones por grupo: el efecto es demasiado pequeño.'},
+ W:{cells:'Recuento esperado en alguna celda menor que 5: la aproximación normal no es fiable; es preferible la simulación.',
+  lowCount:'Recuentos esperados por paciente muy bajos: la aproximación normal de la log-tasa es burda; confíe más en la simulación que en la fórmula.',
+  fup0:'Seguimiento mínimo cero: los pacientes reclutados al final apenas aportan información.',
+  tauMax:'τ es igual al seguimiento máximo: la cola de KM en τ se basa en muy pocos pacientes; la simulación puede ser inestable.'},
+ R:{ctrl:'Grupo control',trt:'Grupo tratamiento',fpow:'Potencia (fórmula)',spow:'Potencia simulada',unadj:' (sin ajustar)',sadj:'Simulada, ajustada',events:'Eventos esperados',
+  eff:{cont:'Efecto estandarizado',bin:'Diferencia de riesgos',or:'p₂ implícita por la OR',rr:'p₂ implícita por el RR',hr:'Hazard ratio',rmst:'ΔRMST en τ',count:'Razón de tasas'},
+  tunits:'unid. de tiempo',totalN:'Tamaño muestral total',rand:(n,d)=>`aleatorizar <strong>${n}</strong> para cubrir un ${d}% de abandonos`,noDrop:'sin inflación por abandonos',
+  powerAt:(sim,N)=>`${sim?'Potencia simulada':'Potencia'} con N = ${N}`,reps:'réplicas',fig:'Potencia según el tamaño muestral total',
+  note:sim=>`Curva: aproximación analítica. Punto: este diseño${sim?' (simulación; barra = IC binomial del 95%)':''}.`,
+  xax:'N total analizado',yax:'Potencia (%)',dsF:'Fórmula (sin ajustar)',dsA:'Fórmula, ANCOVA (1−ρ²)',dsT:'Potencia objetivo',dsSU:'Simulada (sin ajustar)',dsSA:'Simulada (ajustada)',dsD:'Este diseño',at:'con N =',
+  cov:'Ajuste por la covariable basal',covPP:'de potencia por el ajuste con este N.',
+  covSave:p=>`Aproximadamente la misma potencia con <strong>~${p}% menos pacientes</strong> (equivalencia por aproximación normal).`,
+  covCond:'Para la OR y el HR el estimando ajustado es condicional, no marginal: parte de la ganancia procede de la desatenuación y no de la reducción de la varianza.',
+  unadjL:'Sin ajustar',adjL:'Ajustado por X',ci:'IC 95%',methods:'Métodos y supuestos',paper:'Texto para su artículo',copy:'Copiar',copied:'Copiado ✓',with:'con',ev:'eventos'},
+ tests:{cont:['una prueba para la diferencia de dos medias','la prueba t de Welch','el análisis de la covarianza (ANCOVA)'],
+  bin:['una prueba z para dos proporciones','una prueba z para dos proporciones','la regresión logística'],binNI:['una prueba de Wald para la diferencia de riesgos','una prueba de Wald para la diferencia de riesgos',''],
+  or:['una prueba de Wald sobre el logaritmo de la odds ratio','una prueba de Wald sobre el logaritmo de la odds ratio','la regresión logística'],
+  rr:['una prueba de Wald sobre el logaritmo del riesgo relativo','una prueba de Wald sobre el logaritmo del riesgo relativo','la regresión de Poisson modificada con errores estándar robustos'],
+  hr:['la prueba de log-rank','la prueba de log-rank','la regresión de riesgos proporcionales de Cox'],
+  rmst:['una prueba z que compara las estimaciones de Kaplan–Meier del RMST','una prueba z que compara las estimaciones de Kaplan–Meier del RMST',''],
+  count:['una prueba de Wald sobre el logaritmo de la razón de tasas','una prueba de Wald sobre el logaritmo de la razón de tasas','']},
+ eff(P,R){const v=effVals(P,R);switch(P.outcome){
+  case 'cont':return P.design==='ni'
+    ?`demostrar la no inferioridad del tratamiento con un margen de no inferioridad de ${v.m}, suponiendo una diferencia real de medias (tratamiento − control) de ${v.ds} y una desviación estándar común de ${v.sd}`
+    :`detectar una diferencia de medias de ${v.d} (${v.mu1} en el grupo control frente a ${v.mu2} en el grupo de tratamiento), suponiendo una desviación estándar común de ${v.sd} (tamaño del efecto estandarizado ${v.delta})`;
+  case 'bin':return P.design==='ni'
+    ?`demostrar la no inferioridad con un margen de ${v.m} puntos porcentuales en la escala de diferencia de riesgos, suponiendo proporciones reales del ${v.p1} en el grupo control y del ${v.p2} en el grupo de tratamiento`
+    :`detectar un cambio en la proporción de participantes con el desenlace del ${v.p1} en el grupo control al ${v.p2} en el grupo de tratamiento (una diferencia de riesgos de ${v.rd} puntos porcentuales)`;
+  case 'or':return `detectar una odds ratio de ${v.or}, suponiendo una proporción del ${v.p1} en el grupo control (lo que implica un ${v.p2} en el grupo de tratamiento)`;
+  case 'rr':return `detectar un riesgo relativo de ${v.rr}, suponiendo un riesgo del ${v.p1} en el grupo control (lo que implica un ${v.p2} en el grupo de tratamiento)`;
+  case 'hr':return `detectar un hazard ratio de ${v.hr}, suponiendo tiempos de supervivencia con distribución exponencial y una mediana de ${v.med1} unidades de tiempo en el grupo control, un reclutamiento uniforme durante ${v.acc} unidades de tiempo y un seguimiento mínimo de ${v.fup} unidades de tiempo (aproximadamente ${v.D} eventos esperados)`;
+  case 'rmst':return `detectar una diferencia de ${v.dr} unidades de tiempo en el tiempo medio de supervivencia restringido (RMST) hasta τ = ${v.tau}, suponiendo supervivencia exponencial con medianas de ${v.med1} (control) y ${v.med2} (tratamiento), un reclutamiento uniforme durante ${v.acc} y un seguimiento mínimo de ${v.fup} unidades de tiempo`;
+  case 'count':return `detectar una razón de tasas de ${v.rr}, suponiendo una tasa de eventos en el grupo control de ${v.rate0} por unidad de tiempo, ${v.expo} unidades de tiempo de seguimiento por participante y ${P.disp>0?`sobredispersión binomial negativa (k = ${v.k})`:'recuentos con distribución de Poisson'}`;}},
+ paper(R){const {P}=R,d=paperNums(R);
+  const arms=`${d.n1} en el grupo control y ${d.n2} en el grupo de tratamiento${d.eq?'':`; razón de asignación tratamiento:control de ${d.r}:1`}`;
+  const pw=d.atLeast?`una potencia de al menos el ${d.pow}%`:`una potencia del ${d.pow}%`,tail=`${this.eff(P,R)}, utilizando ${testName(this,P)} con un nivel de significación ${d.one?'unilateral':'bilateral'} de ${d.alpha}.`;
+  let s=P.solve==='n'?`Un total de ${d.N} participantes (${arms}) proporcionará ${pw} para ${tail}`:`Con un total de ${d.N} participantes (${arms}), el estudio tendrá ${pw} para ${tail}`;
+  if(d.cov)s+=` El análisis se ajustará por una covariable basal con una correlación supuesta de ${d.rho} con el desenlace; sin ajuste, la potencia simulada sería del ${d.pU}%.`;
+  s+=d.isSim?` La potencia se estimó mediante simulación de Monte Carlo con ${d.nsim} ensayos simulados${d.seed!=null?` (semilla ${d.seed})`:''}; el IC del 95% de la potencia estimada es ${d.lo}% a ${d.hi}%.`
+    :` El cálculo utilizó la aproximación normal de forma cerrada${d.hr?' (fórmula de Schoenfeld para el número de eventos necesario)':''}.`;
+  if(d.drop)s+=` Para compensar un ${d.drop}% de pérdidas en el seguimiento, se aleatorizarán ${d.Nrand} participantes.`;
+  return s+` Los cálculos se realizaron con la calculadora de tamaño muestral y potencia de Teixeira-Pinto (${URL_SELF}).`;},
+ M:{cont:`<p><strong>Fórmula.</strong> Aproximación normal para la diferencia de dos medias con asignación desigual; la superioridad usa α bilateral y la no inferioridad contrasta H₀: μ<sub>T</sub>−μ<sub>C</sub> ≤ −m con α unilateral (valores más altos son mejores).</p>
+<p><strong>Simulación.</strong> Desenlaces normales analizados con la prueba t de Welch. Con la covariable basal activada, (X, Y) son normales bivariantes con correlación ρ y el análisis ajustado es un ANCOVA (Y ~ grupo + X). La DE residual se reduce en un factor √(1−ρ²), que es exactamente la ganancia de la fórmula: la curva ANCOVA analítica discontinua se superpone para comprobar que la simulación coincide.</p>`,
+bin:`<p><strong>Fórmula.</strong> Prueba z para dos proporciones con varianza combinada bajo la hipótesis nula (superioridad) o prueba de Wald no combinada con nula desplazada (no inferioridad, escala de diferencia de riesgos, p más alta = mejor).</p>
+<p><strong>Simulación.</strong> Los desenlaces se generan con un modelo probit latente: Y = 1 si ρX + √(1−ρ²)Z es menor que Φ⁻¹(p<sub>grupo</sub>), de modo que ρ es la correlación en la escala latente (biserial) entre covariable y desenlace; la correlación punto-biserial observable es menor. El análisis ajustado es una regresión logística (prueba de Wald sobre el coeficiente del grupo). La ganancia por el ajuste es menor que en desenlaces continuos y actúa a través de la no colapsabilidad: el ajuste aleja la OR de 1 en lugar de reducir el error estándar.</p>`,
+or:`<p><strong>Fórmula.</strong> Prueba de Wald sobre log OR; p₂ se deriva de la proporción del control y la OR. El tamaño muestral usa Var(ln OR) ≈ 1/(n₁p₁q₁) + 1/(n₂p₂q₂).</p>
+<p><strong>Simulación.</strong> Misma generación probit latente que el desenlace binario; el análisis sin ajustar es el log-OR de Wald de la tabla 2×2 (con corrección de continuidad de 0.5 si una celda está vacía) y el ajustado es una regresión logística. La OR condicional (ajustada) es de mayor magnitud que la OR marginal —no colapsabilidad—, por lo que la potencia puede cambiar aunque la aleatorización equilibre la covariable.</p>`,
+rr:`<p><strong>Fórmula.</strong> Prueba de Wald sobre log RR; p₂ = RR·p₁ (debe ser menor que 1). El tamaño muestral usa la varianza por el método delta Var(ln RR) ≈ q₁/(n₁p₁) + q₂/(n₂p₂).</p>
+<p><strong>Simulación.</strong> Misma generación probit latente que el desenlace binario; el análisis sin ajustar es el log-RR de Wald de la tabla 2×2 (se suma 0.5 a cada número de eventos y 1 a cada tamaño de grupo si algún grupo no tiene eventos o los tiene todos) y el ajustado es una regresión de Poisson modificada —enlace logarítmico con varianza sándwich robusta (Zou 2004)—, que evita los fallos de convergencia de los modelos log-binomiales. A diferencia de la OR, el RR es colapsable, así que el ajuste actúa sobre todo reduciendo la varianza; con el modelo probit latente el RR condicional no es exactamente constante, por lo que la potencia ajustada es orientativa.</p>`,
+hr:`<p><strong>Fórmula.</strong> Fórmula de eventos de Schoenfeld D = (z<sub>1−α/2</sub>+z<sub>1−β</sub>)²/(π₁π₂ ln²HR), convertida a N mediante las probabilidades de evento bajo supervivencia exponencial, reclutamiento uniforme durante el periodo de reclutamiento y censura administrativa al final del reclutamiento + seguimiento.</p>
+<p><strong>Simulación.</strong> Tiempos de evento exponenciales con entrada escalonada; el análisis sin ajustar es la prueba de log-rank y el ajustado un modelo de Cox con dos covariables (empates de Breslow, Newton–Raphson). La covariable actúa multiplicativamente sobre el riesgo con un coeficiente calibrado para que corr(X, log T) = ρ; el HR introducido es el HR condicional a la covariable, de modo que el HR sin ajustar (marginal) se atenúa hacia 1, y por eso el análisis de Cox ajustado puede ser claramente más potente.</p>`,
+rmst:`<p><strong>Fórmula.</strong> Diferencia en el tiempo medio de supervivencia restringido hasta τ bajo supervivencia exponencial. La varianza asintótica del RMST de Kaplan–Meier, ∫₀^τ [∫<sub>t</sub>^τ S]² dΛ/(S·G), se integra numéricamente, con G(t) la supervivencia de la censura implicada por el reclutamiento uniforme más la censura administrativa.</p>
+<p><strong>Simulación.</strong> RMST de Kaplan–Meier en cada grupo con la varianza estándar (tipo Greenwood) y una prueba z sobre la diferencia, es decir, el análisis sin ajustar de Royston–Parmar / Uno y colaboradores. El ajuste por covariables (p. ej., mediante pseudoobservaciones) no está implementado para el RMST.</p>`,
+count:`<p><strong>Fórmula.</strong> Prueba de Wald sobre el logaritmo de la razón de tasas con Var(ln λ̂) ≈ (1/(λt)+k)/n por grupo, donde k es la dispersión binomial negativa (k = 0 equivale a Poisson).</p>
+<p><strong>Simulación.</strong> Los recuentos se generan como Poisson–gamma (binomial negativa); la prueba es una z robusta por el método delta sobre el logaritmo del cociente de recuentos medios con varianzas empíricas, por lo que sigue siendo válida con sobredispersión.</p>`,
+mc:`<p><strong>Error de Monte Carlo.</strong> La potencia simulada se presenta con un intervalo binomial del 95%; con 1000 réplicas, la semiamplitud cerca del 80% de potencia es de unos ±2.5 puntos porcentuales. Fije la semilla para que los resultados sean reproducibles.</p>`}
+},
+/* ---------------- Português ---------------- */
+pt:{
+ title:'Dimensão amostral e potência',
+ sub:'Ensaios aleatorizados com dois grupos · fórmula fechada ou simulação, com ajuste opcional para uma covariável basal',
+ foot:'Desenvolvido por <a href="https://profiles.sydney.edu.au/armando.teixeira-pinto">Armando Teixeira-Pinto</a> e Claude Fable 5',
+ lang:'Idioma',outcomeAria:'Tipo de desfecho',inputs:'Dados',outcome:n=>n,
+ out:{cont:['Contínuo','Diferença de médias'],bin:['Binário','Diferença de riscos'],or:['Odds ratio','Logístico'],rr:['Risco relativo','Razão de riscos'],hr:['Hazard ratio','Log-rank / Cox'],rmst:['RMST','Sobrevivência média restrita'],count:['Contagem / taxa','Poisson ou binomial negativa']},
+ fld:{'cont.mu1':['Média do controlo','μ₁'],'cont.mu2':['Média do tratamento','μ₂'],'cont.sd':['DP comum','σ'],'cont.margin':['Margem de não inferioridade','m > 0, maior = melhor'],
+  'bin.p1':['Proporção no controlo','p₁'],'bin.p2':['Proporção no tratamento','p₂'],'bin.margin':['Margem de não inferioridade','m > 0, escala de risco'],
+  'or.p1':['Proporção no controlo','p₁'],'or.or':['Odds ratio','tratamento vs controlo'],
+  'rr.p1':['Risco no controlo','p₁'],'rr.rr':['Risco relativo','tratamento vs controlo'],
+  'hr.hr':['Hazard ratio','tratamento vs controlo'],'hr.med1':['Mediana de sobrevivência do controlo','unidades de tempo'],'hr.acc':['Período de recrutamento','entrada uniforme'],'hr.fup':['Seguimento mínimo','após o recrutamento'],
+  'rmst.med1':['Mediana de sobrevivência do controlo','exponencial'],'rmst.med2':['Mediana de sobrevivência do tratamento','exponencial'],'rmst.tau':['Tempo de truncatura τ','≤ recrutamento + seguimento'],'rmst.acc':['Período de recrutamento','entrada uniforme'],'rmst.fup':['Seguimento mínimo','após o recrutamento'],
+  'count.rate0':['Taxa de eventos do controlo','por unidade de tempo'],'count.rr':['Razão de taxas','tratamento vs controlo'],'count.expo':['Seguimento por doente','unidades de tempo'],'count.disp':['Dispersão k','0 = Poisson; var μ+kμ²']},
+ hyp:'Hipótese',sup:'Superioridade',ni:'Não inferioridade',ea:'Erro e alocação',one:'unilateral',two:'bilateral',tpow:'Potência pretendida',Ntot:'N total',
+ alloc:'Alocação T : C',drop:'Perdas %',dropH:'aumenta N',solve:'Calcular',sN:'Dimensão amostral',sP:'Potência para um N dado',meth:'Método de cálculo',
+ formula:'Fórmula',sim:'Simulação',mc:'Monte Carlo',reps:'Réplicas',seed:'Semente',seedH:'vazio = aleatória',cov:'Covariável basal',
+ covAdj:'Ajustar a análise para uma covariável basal',rho:'Correlação ρ com o desfecho',covNI:'O ajuste para covariáveis só está disponível para desenhos de superioridade.',
+ runN:'Calcular dimensão amostral',runP:'Calcular potência',empty1:'Defina o desenho e carregue em Calcular.',
+ empty2:'O modo fórmula dá a resposta analítica de imediato; o modo simulação estima a potência por Monte Carlo e pode acrescentar à análise uma covariável basal correlacionada.',
+ E:{alpha:'α tem de estar em (0, 0.3).',pow:'A potência pretendida tem de estar entre α e 1.',N:'O N total tem de ser pelo menos 4.',ratio:'A razão de alocação tem de estar entre 0.2 e 5.',
+  sd:'O DP tem de ser positivo.',eqMeans:'As médias são iguais: não há efeito a detetar.',margin:'A margem de não inferioridade tem de ser positiva.',contNI:'A diferença esperada + a margem tem de ser positiva (maior = melhor).',
+  props:'As proporções têm de estar estritamente entre 0 e 1.',eqProps:'As proporções são iguais: não há efeito a detetar.',binNI:'A diferença esperada + a margem tem de ser positiva.',
+  p1:'A proporção no controlo tem de estar em (0, 1).',or:'O OR tem de ser positivo e ≠ 1.',rr:'O RR tem de ser positivo e ≠ 1.',rrImpl:v=>`RR × p₁ = ${v}: o risco implícito no tratamento tem de ser inferior a 1.`,
+  hr:'O HR tem de ser positivo e ≠ 1.',hrPer:'A mediana e os períodos do estudo têm de ser positivos.',rmstPer:'As medianas, τ e os períodos do estudo têm de ser positivos.',
+  eqMed:'As medianas são iguais: não há diferença de RMST no modelo exponencial.',tau:'τ não pode exceder recrutamento + seguimento: nenhum doente seria observado até τ.',
+  rate:'A taxa e o seguimento têm de ser positivos.',rateR:'A razão de taxas tem de ser positiva e ≠ 1.',disp:'A dispersão não pode ser negativa.',
+  infeasible:'Não existe dimensão amostral viável abaixo de 4 milhões por grupo: o efeito é demasiado pequeno.'},
+ W:{cells:'Contagem esperada inferior a 5 numa célula: a aproximação normal não é fiável; prefira a simulação.',
+  lowCount:'Contagens esperadas por doente muito baixas: a aproximação normal da log-taxa é grosseira; confie mais na simulação do que na fórmula.',
+  fup0:'Seguimento mínimo zero: os doentes recrutados no fim quase não contribuem com informação.',
+  tauMax:'τ é igual ao seguimento máximo: a cauda de KM em τ assenta em muito poucos doentes; a simulação pode ser instável.'},
+ R:{ctrl:'Grupo controlo',trt:'Grupo tratamento',fpow:'Potência (fórmula)',spow:'Potência simulada',unadj:' (sem ajuste)',sadj:'Simulada, ajustada',events:'Eventos esperados',
+  eff:{cont:'Efeito padronizado',bin:'Diferença de riscos',or:'p₂ implícito pelo OR',rr:'p₂ implícito pelo RR',hr:'Hazard ratio',rmst:'ΔRMST em τ',count:'Razão de taxas'},
+  tunits:'unid. de tempo',totalN:'Dimensão amostral total',rand:(n,d)=>`aleatorizar <strong>${n}</strong> para compensar ${d}% de perdas`,noDrop:'sem inflação para perdas',
+  powerAt:(sim,N)=>`${sim?'Potência simulada':'Potência'} com N = ${N}`,reps:'réplicas',fig:'Potência em função da dimensão amostral total',
+  note:sim=>`Curva: aproximação analítica. Ponto: este desenho${sim?' (simulação; barra = IC binomial a 95%)':''}.`,
+  xax:'N total analisado',yax:'Potência (%)',dsF:'Fórmula (sem ajuste)',dsA:'Fórmula, ANCOVA (1−ρ²)',dsT:'Potência pretendida',dsSU:'Simulada (sem ajuste)',dsSA:'Simulada (ajustada)',dsD:'Este desenho',at:'com N =',
+  cov:'Ajuste para a covariável basal',covPP:'de potência pelo ajuste com este N.',
+  covSave:p=>`Aproximadamente a mesma potência com <strong>~${p}% menos doentes</strong> (equivalência pela aproximação normal).`,
+  covCond:'Para o OR e o HR o estimando ajustado é condicional, não marginal: parte do ganho vem da desatenuação e não da redução da variância.',
+  unadjL:'Sem ajuste',adjL:'Ajustado para X',ci:'IC 95%',methods:'Métodos e pressupostos',paper:'Texto para o seu artigo',copy:'Copiar',copied:'Copiado ✓',with:'com',ev:'eventos'},
+ tests:{cont:['um teste para a diferença de duas médias','o teste t de Welch','a análise de covariância (ANCOVA)'],
+  bin:['um teste z para duas proporções','um teste z para duas proporções','a regressão logística'],binNI:['um teste de Wald para a diferença de riscos','um teste de Wald para a diferença de riscos',''],
+  or:['um teste de Wald sobre o logaritmo do odds ratio','um teste de Wald sobre o logaritmo do odds ratio','a regressão logística'],
+  rr:['um teste de Wald sobre o logaritmo do risco relativo','um teste de Wald sobre o logaritmo do risco relativo','a regressão de Poisson modificada com erros padrão robustos'],
+  hr:['o teste log-rank','o teste log-rank','a regressão de riscos proporcionais de Cox'],
+  rmst:['um teste z que compara as estimativas de Kaplan–Meier do RMST','um teste z que compara as estimativas de Kaplan–Meier do RMST',''],
+  count:['um teste de Wald sobre o logaritmo da razão de taxas','um teste de Wald sobre o logaritmo da razão de taxas','']},
+ eff(P,R){const v=effVals(P,R);switch(P.outcome){
+  case 'cont':return P.design==='ni'
+    ?`demonstrar a não inferioridade do tratamento com uma margem de não inferioridade de ${v.m}, assumindo uma diferença real de médias (tratamento − controlo) de ${v.ds} e um desvio padrão comum de ${v.sd}`
+    :`detetar uma diferença de médias de ${v.d} (${v.mu1} no grupo de controlo versus ${v.mu2} no grupo de tratamento), assumindo um desvio padrão comum de ${v.sd} (tamanho do efeito padronizado ${v.delta})`;
+  case 'bin':return P.design==='ni'
+    ?`demonstrar a não inferioridade com uma margem de ${v.m} pontos percentuais na escala da diferença de riscos, assumindo proporções reais de ${v.p1} no grupo de controlo e ${v.p2} no grupo de tratamento`
+    :`detetar uma alteração na proporção de participantes com o desfecho de ${v.p1} no grupo de controlo para ${v.p2} no grupo de tratamento (uma diferença de riscos de ${v.rd} pontos percentuais)`;
+  case 'or':return `detetar um odds ratio de ${v.or}, assumindo uma proporção de ${v.p1} no grupo de controlo (o que implica ${v.p2} no grupo de tratamento)`;
+  case 'rr':return `detetar um risco relativo de ${v.rr}, assumindo um risco de ${v.p1} no grupo de controlo (o que implica ${v.p2} no grupo de tratamento)`;
+  case 'hr':return `detetar um hazard ratio de ${v.hr}, assumindo tempos de sobrevivência com distribuição exponencial e uma mediana de ${v.med1} unidades de tempo no grupo de controlo, recrutamento uniforme durante ${v.acc} unidades de tempo e um seguimento mínimo de ${v.fup} unidades de tempo (cerca de ${v.D} eventos esperados)`;
+  case 'rmst':return `detetar uma diferença de ${v.dr} unidades de tempo no tempo médio de sobrevivência restrito (RMST) até τ = ${v.tau}, assumindo sobrevivência exponencial com medianas de ${v.med1} (controlo) e ${v.med2} (tratamento), recrutamento uniforme durante ${v.acc} e um seguimento mínimo de ${v.fup} unidades de tempo`;
+  case 'count':return `detetar uma razão de taxas de ${v.rr}, assumindo uma taxa de eventos no grupo de controlo de ${v.rate0} por unidade de tempo, ${v.expo} unidades de tempo de seguimento por participante e ${P.disp>0?`sobredispersão binomial negativa (k = ${v.k})`:'contagens com distribuição de Poisson'}`;}},
+ paper(R){const {P}=R,d=paperNums(R);
+  const arms=`${d.n1} no grupo de controlo e ${d.n2} no grupo de tratamento${d.eq?'':`; razão de alocação tratamento:controlo de ${d.r}:1`}`;
+  const pw=d.atLeast?`uma potência de pelo menos ${d.pow}%`:`uma potência de ${d.pow}%`,tail=`${this.eff(P,R)}, utilizando ${testName(this,P)} com um nível de significância ${d.one?'unilateral':'bilateral'} de ${d.alpha}.`;
+  let s=P.solve==='n'?`Um total de ${d.N} participantes (${arms}) proporcionará ${pw} para ${tail}`:`Com um total de ${d.N} participantes (${arms}), o estudo terá ${pw} para ${tail}`;
+  if(d.cov)s+=` A análise será ajustada para uma covariável basal com uma correlação assumida de ${d.rho} com o desfecho; sem ajuste, a potência simulada seria de ${d.pU}%.`;
+  s+=d.isSim?` A potência foi estimada por simulação de Monte Carlo com ${d.nsim} ensaios simulados${d.seed!=null?` (semente ${d.seed})`:''}; o IC a 95% da potência estimada é ${d.lo}% a ${d.hi}%.`
+    :` O cálculo utilizou a aproximação normal em forma fechada${d.hr?' (fórmula de Schoenfeld para o número de eventos necessário)':''}.`;
+  if(d.drop)s+=` Para compensar ${d.drop}% de perdas de seguimento, serão aleatorizados ${d.Nrand} participantes.`;
+  return s+` Os cálculos foram efetuados com a calculadora de dimensão amostral e potência de Teixeira-Pinto (${URL_SELF}).`;},
+ M:{cont:`<p><strong>Fórmula.</strong> Aproximação normal para a diferença de duas médias com alocação desigual; a superioridade usa α bilateral e a não inferioridade testa H₀: μ<sub>T</sub>−μ<sub>C</sub> ≤ −m com α unilateral (valores maiores são melhores).</p>
+<p><strong>Simulação.</strong> Desfechos normais analisados com o teste t de Welch. Com a covariável basal ativa, (X, Y) são normais bivariados com correlação ρ e a análise ajustada é uma ANCOVA (Y ~ grupo + X). O DP residual diminui por um fator √(1−ρ²), que é exatamente o ganho da fórmula: a curva ANCOVA analítica tracejada é sobreposta para se ver que a simulação concorda.</p>`,
+bin:`<p><strong>Fórmula.</strong> Teste z para duas proporções com variância combinada sob a hipótese nula (superioridade) ou teste de Wald não combinado com nula deslocada (não inferioridade, escala da diferença de riscos, p maior = melhor).</p>
+<p><strong>Simulação.</strong> Os desfechos são gerados por um modelo probit latente: Y = 1 se ρX + √(1−ρ²)Z for inferior a Φ⁻¹(p<sub>grupo</sub>), pelo que ρ é a correlação na escala latente (bisserial) entre covariável e desfecho; a correlação ponto-bisserial observável é menor. A análise ajustada é uma regressão logística (teste de Wald sobre o coeficiente do grupo). O ganho do ajuste é menor do que em desfechos contínuos e atua através da não colapsabilidade: o ajuste afasta o OR de 1 em vez de reduzir o erro padrão.</p>`,
+or:`<p><strong>Fórmula.</strong> Teste de Wald sobre log OR; p₂ é derivado da proporção no controlo e do OR. A dimensão amostral usa Var(ln OR) ≈ 1/(n₁p₁q₁) + 1/(n₂p₂q₂).</p>
+<p><strong>Simulação.</strong> Mesma geração probit latente do desfecho binário; a análise sem ajuste é o log-OR de Wald da tabela 2×2 (com correção de continuidade de 0.5 se uma célula estiver vazia) e a ajustada é uma regressão logística. O OR condicional (ajustado) é de maior magnitude do que o OR marginal —não colapsabilidade—, pelo que a potência pode mudar mesmo com a covariável equilibrada pela aleatorização.</p>`,
+rr:`<p><strong>Fórmula.</strong> Teste de Wald sobre log RR; p₂ = RR·p₁ (tem de ser inferior a 1). A dimensão amostral usa a variância pelo método delta Var(ln RR) ≈ q₁/(n₁p₁) + q₂/(n₂p₂).</p>
+<p><strong>Simulação.</strong> Mesma geração probit latente do desfecho binário; a análise sem ajuste é o log-RR de Wald da tabela 2×2 (soma-se 0.5 a cada número de eventos e 1 a cada dimensão de grupo se algum grupo não tiver eventos ou os tiver todos) e a ajustada é uma regressão de Poisson modificada —ligação logarítmica com variância sanduíche robusta (Zou 2004)—, que evita as falhas de convergência dos modelos log-binomiais. Ao contrário do OR, o RR é colapsável, pelo que o ajuste atua sobretudo pela redução da variância; no modelo probit latente o RR condicional não é exatamente constante, por isso a potência ajustada é indicativa.</p>`,
+hr:`<p><strong>Fórmula.</strong> Fórmula de eventos de Schoenfeld D = (z<sub>1−α/2</sub>+z<sub>1−β</sub>)²/(π₁π₂ ln²HR), convertida em N através das probabilidades de evento sob sobrevivência exponencial, recrutamento uniforme durante o período de recrutamento e censura administrativa no fim do recrutamento + seguimento.</p>
+<p><strong>Simulação.</strong> Tempos de evento exponenciais com entrada escalonada; a análise sem ajuste é o teste log-rank e a ajustada um modelo de Cox com duas covariáveis (empates de Breslow, Newton–Raphson). A covariável atua multiplicativamente sobre o risco com um coeficiente calibrado para que corr(X, log T) = ρ; o HR introduzido é o HR condicional à covariável, pelo que o HR sem ajuste (marginal) é atenuado em direção a 1, e é por isso que a análise de Cox ajustada pode ser visivelmente mais potente.</p>`,
+rmst:`<p><strong>Fórmula.</strong> Diferença no tempo médio de sobrevivência restrito até τ sob sobrevivência exponencial. A variância assintótica do RMST de Kaplan–Meier, ∫₀^τ [∫<sub>t</sub>^τ S]² dΛ/(S·G), é integrada numericamente, com G(t) a sobrevivência da censura implicada pelo recrutamento uniforme mais a censura administrativa.</p>
+<p><strong>Simulação.</strong> RMST de Kaplan–Meier em cada grupo com a variância habitual (tipo Greenwood) e um teste z sobre a diferença, ou seja, a análise sem ajuste de Royston–Parmar / Uno e colaboradores. O ajuste para covariáveis (p. ex., através de pseudo-observações) não está implementado para o RMST.</p>`,
+count:`<p><strong>Fórmula.</strong> Teste de Wald sobre o logaritmo da razão de taxas com Var(ln λ̂) ≈ (1/(λt)+k)/n por grupo, onde k é a dispersão binomial negativa (k = 0 corresponde a Poisson).</p>
+<p><strong>Simulação.</strong> As contagens são geradas como Poisson–gama (binomial negativa); o teste é um z robusto pelo método delta sobre o logaritmo da razão das contagens médias com variâncias empíricas, pelo que se mantém válido com sobredispersão.</p>`,
+mc:`<p><strong>Erro de Monte Carlo.</strong> A potência simulada é apresentada com um intervalo binomial a 95%; com 1000 réplicas, a semiamplitude perto de 80% de potência é de cerca de ±2.5 pontos percentuais. Fixe a semente para tornar os resultados reprodutíveis.</p>`}
+}};
+</script>
+<script>
+/* ================= outcome configuration ================= */
+const G={
+cont:'<svg viewBox="0 0 20 20" fill="none"><path d="M1 17c4 0 5-13 9-13s5 13 9 13" style="stroke:var(--ctl)" stroke-width="1.8" stroke-linecap="round"/></svg>',
+bin:'<svg viewBox="0 0 20 20"><circle cx="6" cy="10" r="4.4" style="fill:var(--ctl)"/><circle cx="14.6" cy="10" r="4.4" fill="none" style="stroke:var(--trt)" stroke-width="1.8"/></svg>',
+or:'<svg viewBox="0 0 20 20"><rect x="2" y="2" width="7" height="7" rx="1.5" style="fill:var(--ctl)"/><rect x="11" y="2" width="7" height="7" rx="1.5" fill="none" style="stroke:var(--trt)" stroke-width="1.6"/><rect x="2" y="11" width="7" height="7" rx="1.5" fill="none" style="stroke:var(--ctl)" stroke-width="1.6"/><rect x="11" y="11" width="7" height="7" rx="1.5" style="fill:var(--trt)"/></svg>',
+rr:'<svg viewBox="0 0 20 20"><rect x="3" y="9" width="5.5" height="9" rx="1.5" style="fill:var(--ctl)"/><rect x="11.5" y="3" width="5.5" height="15" rx="1.5" fill="none" style="stroke:var(--trt)" stroke-width="1.6"/></svg>',
+hr:'<svg viewBox="0 0 20 20" fill="none"><path d="M2 3h5v4h4v5h4v5h3" style="stroke:var(--ctl)" stroke-width="1.8"/><path d="M2 3h3v7h5v6h8" style="stroke:var(--trt)" stroke-width="1.8" stroke-dasharray="3 2"/></svg>',
+rmst:'<svg viewBox="0 0 20 20"><path d="M2 4h5v4h4v5h4v4H2z" style="fill:var(--trt)" opacity=".25"/><path d="M2 4h5v4h4v5h4v4" style="stroke:var(--trt)" stroke-width="1.8" fill="none"/></svg>',
+count:'<svg viewBox="0 0 20 20" style="fill:var(--ctl)"><circle cx="4" cy="15" r="1.8"/><circle cx="9" cy="7" r="1.8"/><circle cx="12" cy="13" r="1.8" style="fill:var(--trt)"/><circle cx="16" cy="5" r="1.8" style="fill:var(--trt)"/><circle cx="6" cy="4" r="1.8"/><circle cx="16" cy="16" r="1.8" style="fill:var(--trt)"/></svg>'
+};
+const OUT=[
+{id:'cont',ni:true,cov:true,fields:[{id:'mu1',v:0,step:0.1},{id:'mu2',v:0.5,step:0.1},{id:'sd',v:1,step:0.1,min:1e-9},{id:'margin',v:0.3,step:0.05,min:1e-9,ni:true}]},
+{id:'bin',ni:true,cov:true,fields:[{id:'p1',v:0.30,step:0.01,min:0.001,max:0.999},{id:'p2',v:0.45,step:0.01,min:0.001,max:0.999},{id:'margin',v:0.10,step:0.01,min:1e-9,ni:true}]},
+{id:'or',ni:false,cov:true,fields:[{id:'p1',v:0.30,step:0.01,min:0.001,max:0.999},{id:'or',v:2.0,step:0.1,min:1e-6}]},
+{id:'rr',ni:false,cov:true,fields:[{id:'p1',v:0.30,step:0.01,min:0.001,max:0.999},{id:'rr',v:1.5,step:0.1,min:1e-6}]},
+{id:'hr',ni:false,cov:true,fields:[{id:'hr',v:0.70,step:0.05,min:1e-6},{id:'med1',v:12,step:1,min:1e-9},{id:'acc',v:24,step:1,min:1e-9},{id:'fup',v:12,step:1,min:0}]},
+{id:'rmst',ni:false,cov:false,fields:[{id:'med1',v:12,step:1,min:1e-9},{id:'med2',v:18,step:1,min:1e-9},{id:'tau',v:24,step:1,min:1e-9},{id:'acc',v:24,step:1,min:1e-9},{id:'fup',v:12,step:1,min:0}]},
+{id:'count',ni:false,cov:false,fields:[{id:'rate0',v:1.2,step:0.1,min:1e-9},{id:'rr',v:0.70,step:0.05,min:1e-6},{id:'expo',v:1,step:0.5,min:1e-9},{id:'disp',v:0.5,step:0.1,min:0}]}
+];
+
+/* persistent state */
+const S={outcome:'cont',method:'formula',solve:'n',design:'sup',
+ alpha:0.05,targetPower:0.80,Ntotal:120,ratio:1,dropout:10,nsim:1000,seed:'',
+ covOn:false,rho:0.5,vals:{}};
+OUT.forEach(o=>{S.vals[o.id]={};o.fields.forEach(f=>S.vals[o.id][f.id]=f.v);});
+function storedLang(){try{return localStorage.getItem('ssize-lang')}catch(e){return null}}
+let lang=[new URLSearchParams(location.search).get('lang'),storedLang()].find(c=>c in I18N)||'en';
+const L=()=>I18N[lang];
+let lastR=null;
+
+/* ================= form rendering ================= */
+const $=id=>document.getElementById(id);
+function segHTML(id,opts,cur){
+  return `<div class="seg" role="group" id="${id}">`+opts.map(o=>
+   `<button type="button" data-v="${o.v}" aria-pressed="${o.v===cur}">${o.t}</button>`).join('')+`</div>`;
+}
+function fieldHTML(o,f,val){
+  const [lab,hint]=L().fld[o.id+'.'+f.id];
+  return `<div class="field"><label for="f_${f.id}">${lab}${hint?`<span class="hint">${hint}</span>`:''}</label>
+  <input type="number" id="f_${f.id}" value="${val}" step="${f.step||'any'}" ${f.min!==undefined?`min="${f.min}"`:''} ${f.max!==undefined?`max="${f.max}"`:''}></div>`;
+}
+function renderForm(){
+  const o=OUT.find(x=>x.id===S.outcome),T=L();
+  $('panelTitle').textContent=T.out[o.id][0];
+  const V=S.vals[o.id];
+  let h='';
+  if(o.ni)h+=`<div class="field"><span class="flab">${T.hyp}</span>${segHTML('segDesign',[{v:'sup',t:T.sup},{v:'ni',t:T.ni}],S.design)}</div>`;
+  h+=o.fields.filter(f=>!f.ni||S.design==='ni').map(f=>fieldHTML(o,f,V[f.id])).join('');
+  h+=`<fieldset class="grp"><legend>${T.ea}</legend>
+   <div class="row2">
+    <div class="field"><label for="f_alpha">α <span class="hint">${S.design==='ni'&&o.ni?T.one:T.two}</span></label>
+      <input type="number" id="f_alpha" value="${S.alpha}" step="0.01" min="0.0001" max="0.3"></div>
+    ${S.solve==='n'
+      ?`<div class="field"><label for="f_pow">${T.tpow}</label><input type="number" id="f_pow" value="${S.targetPower}" step="0.05" min="0.1" max="0.999"></div>`
+      :`<div class="field"><label for="f_N">${T.Ntot}</label><input type="number" id="f_N" value="${S.Ntotal}" step="2" min="4"></div>`}
+   </div>
+   <div class="row2">
+    <div class="field"><label for="f_ratio">${T.alloc}</label><input type="number" id="f_ratio" value="${S.ratio}" step="0.25" min="0.2" max="5"></div>
+    ${S.solve==='n'?`<div class="field"><label for="f_drop">${T.drop}<span class="hint">${T.dropH}</span></label><input type="number" id="f_drop" value="${S.dropout}" step="5" min="0" max="60"></div>`:'<div></div>'}
+   </div>
+   <div class="field"><span class="flab">${T.solve}</span>${segHTML('segSolve',[{v:'n',t:T.sN},{v:'power',t:T.sP}],S.solve)}</div>
+  </fieldset>`;
+  h+=`<div class="field"><span class="flab">${T.meth}</span>${segHTML('segMethod',[{v:'formula',t:T.formula},{v:'sim',t:T.sim}],S.method)}</div>`;
+  if(S.method==='sim'){
+    h+=`<fieldset class="grp"><legend>${T.mc}</legend>
+     <div class="row2">
+      <div class="field"><label for="f_nsim">${T.reps}</label><select id="f_nsim">${[500,1000,2000,5000].map(k=>`<option ${k===S.nsim?'selected':''}>${k}</option>`).join('')}</select></div>
+      <div class="field"><label for="f_seed">${T.seed}<span class="hint">${T.seedH}</span></label><input type="number" id="f_seed" value="${S.seed}" step="1"></div>
+     </div></fieldset>`;
+    if(o.cov&&S.design==='sup'){
+      h+=`<fieldset class="grp"><legend>${T.cov}</legend>
+       <label class="switch-row" for="f_cov"><span>${T.covAdj}</span><input type="checkbox" id="f_cov" ${S.covOn?'checked':''}></label>
+       <div class="field" id="rhoField" ${S.covOn?'':'hidden'}>
+        <label for="f_rho">${T.rho}</label>
+        <div class="rho-wrap"><input type="range" id="f_rho" min="0" max="0.9" step="0.05" value="${S.rho}"><output id="rhoVal">${S.rho.toFixed(2)}</output></div>
+       </div></fieldset>`;
+    } else if(o.cov&&S.design==='ni'){
+      h+=`<div class="hint">${T.covNI}</div>`;
+    }
+  }
+  h+=`<button class="run" id="btnRun" type="button">${S.solve==='n'?T.runN:T.runP}</button>
+      <div class="progress" id="prog"><i id="progBar"></i></div>
+      <div class="err" id="errBox" role="alert"></div>`;
+  $('form').innerHTML=h;
+  wireForm(o);
+}
+function wireForm(o){
+  const bindSeg=(id,cb)=>{const el=$(id);if(!el)return;
+    el.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>cb(b.dataset.v)));};
+  bindSeg('segDesign',v=>{S.design=v;if(v==='ni')S.covOn=false;saveInputs(o);renderForm();});
+  bindSeg('segSolve',v=>{S.solve=v;saveInputs(o);renderForm();});
+  bindSeg('segMethod',v=>{S.method=v;saveInputs(o);renderForm();});
+  const cov=$('f_cov');
+  if(cov)cov.addEventListener('change',()=>{S.covOn=cov.checked;$('rhoField').hidden=!cov.checked;});
+  const rho=$('f_rho');
+  if(rho)rho.addEventListener('input',()=>{S.rho=parseFloat(rho.value);$('rhoVal').textContent=S.rho.toFixed(2);});
+  $('btnRun').addEventListener('click',calculate);
+}
+function saveInputs(o){
+  o.fields.forEach(f=>{const el=$('f_'+f.id);if(el)S.vals[o.id][f.id]=parseFloat(el.value);});
+  const g=(id,cur)=>{const el=$(id);return el?parseFloat(el.value):cur;};
+  S.alpha=g('f_alpha',S.alpha);S.targetPower=g('f_pow',S.targetPower);
+  S.Ntotal=g('f_N',S.Ntotal);S.ratio=g('f_ratio',S.ratio);S.dropout=g('f_drop',S.dropout);
+  const ns=$('f_nsim');if(ns)S.nsim=parseInt(ns.value);
+  const sd=$('f_seed');if(sd)S.seed=sd.value;
+}
+function renderNav(){
+  const T=L();
+  $('nav').innerHTML=OUT.map(o=>`<button class="chip" aria-pressed="${o.id===S.outcome}" data-o="${o.id}" type="button">
+    <span class="g">${G[o.id]}</span><span><span class="nm">${T.out[o.id][0]}</span><span class="sb">${T.out[o.id][1]}</span></span></button>`).join('');
+  $('nav').querySelectorAll('.chip').forEach(t=>t.addEventListener('click',()=>{
+    saveInputs(OUT.find(x=>x.id===S.outcome));
+    S.outcome=t.dataset.o;
+    const o=OUT.find(x=>x.id===S.outcome);
+    if(!o.ni)S.design='sup';
+    if(!o.cov)S.covOn=false;
+    lastR=null;
+    renderNav();renderForm();renderEmpty();
+  }));
+}
+function renderEmpty(){
+  $('results').innerHTML=`<div class="card"><div class="res-empty"><div class="big">${L().empty1}</div>${L().empty2}</div></div>`;
+}
+
+/* ================= validation & parameter assembly ================= */
+function buildParams(){
+  const o=OUT.find(x=>x.id===S.outcome);
+  saveInputs(o);
+  const seedFixed=S.seed!==''&&!isNaN(parseInt(S.seed));
+  const V=S.vals[o.id],P={outcome:o.id,design:o.ni?S.design:'sup',method:S.method,solve:S.solve,
+    alpha:S.alpha,targetPower:S.targetPower,Ntotal:Math.round(S.Ntotal),ratio:S.ratio,
+    dropout:S.solve==='n'?(S.dropout||0):0,nsim:S.nsim,
+    seed:seedFixed?parseInt(S.seed):(Date.now()%2**31),
+    covOn:S.method==='sim'&&o.cov&&S.design==='sup'&&S.covOn,rho:S.rho,covAnalytic:false,...V};
+  const E=L().E,errs=[],warns=[];
+  const bad=(c,k,arg)=>{if(c)errs.push(typeof E[k]==='function'?E[k](arg):E[k]);};
+  bad(!(P.alpha>0&&P.alpha<0.3),'alpha');
+  bad(S.solve==='n'&&!(P.targetPower>P.alpha&&P.targetPower<1),'pow');
+  bad(S.solve==='power'&&!(P.Ntotal>=4),'N');
+  bad(!(P.ratio>=0.2&&P.ratio<=5),'ratio');
+  if(o.id==='cont'){
+    bad(!(P.sd>0),'sd');
+    if(P.design==='sup')bad(P.mu1===P.mu2,'eqMeans');
+    else{bad(!(P.margin>0),'margin');bad((P.mu2-P.mu1)+P.margin<=0,'contNI');}
+  }
+  if(o.id==='bin'){
+    bad(!(P.p1>0&&P.p1<1&&P.p2>0&&P.p2<1),'props');
+    if(P.design==='sup')bad(P.p1===P.p2,'eqProps');
+    else{bad(!(P.margin>0),'margin');bad((P.p2-P.p1)+P.margin<=0,'binNI');}
+  }
+  if(o.id==='or'){
+    bad(!(P.p1>0&&P.p1<1),'p1');bad(!(P.or>0)||P.or===1,'or');
+    if(P.or>0)P.p2=P.or*P.p1/(1-P.p1+P.or*P.p1);
+  }
+  if(o.id==='rr'){
+    bad(!(P.p1>0&&P.p1<1),'p1');bad(!(P.rr>0)||P.rr===1,'rr');
+    P.p2=P.rr*P.p1;
+    bad(P.rr>0&&!(P.p2<1),'rrImpl',fmt(P.p2));
+  }
+  if(o.id==='hr'){bad(!(P.hr>0)||P.hr===1,'hr');bad(!(P.med1>0&&P.acc>0&&P.fup>=0),'hrPer');}
+  if(o.id==='rmst'){
+    bad(!(P.med1>0&&P.med2>0&&P.tau>0&&P.acc>0&&P.fup>=0),'rmstPer');
+    bad(P.med1===P.med2,'eqMed');bad(P.tau>P.acc+P.fup+1e-9,'tau');
+  }
+  if(o.id==='count'){bad(!(P.rate0>0&&P.expo>0),'rate');bad(!(P.rr>0)||P.rr===1,'rateR');bad(P.disp<0,'disp');}
+  return {P,o,errs,warns,seedFixed};
+}
+function postWarnings(P,o,n1,n2){ // warning keys, translated at render time
+  const w=[];
+  if(o.id==='bin'||o.id==='or'||o.id==='rr'){
+    const m=Math.min(n1*P.p1,n1*(1-P.p1),n2*P.p2,n2*(1-P.p2));
+    if(m<5)w.push('cells');
+  }
+  if(o.id==='count'&&P.rate0*P.expo<0.2)w.push('lowCount');
+  if((o.id==='hr'||o.id==='rmst')&&P.fup===0)w.push('fup0');
+  if(o.id==='rmst'&&Math.abs(P.tau-(P.acc+P.fup))<1e-9)w.push('tauMax');
+  return w;
+}
+
+/* ================= formula strips (with substituted values) ================= */
+function formulaStrip(P,o,R){
+  const za=zAlpha(P).toFixed(3),zb=qnorm(P.targetPower).toFixed(3),w=L().R.with;
+  const zaSym=P.design==='ni'?'z₁₋α':'z₁₋α/₂';
+  switch(o.id){
+    case 'cont':{const eff=P.design==='ni'?`(Δ+m) = ${fmt((P.mu2-P.mu1)+P.margin)}`:`Δ = ${fmt(Math.abs(P.mu2-P.mu1))}`;
+      return `n₁ = (1 + 1/r)·σ²·(${zaSym} + z₁₋β)² / Δ²  ${w}  σ = ${fmt(P.sd)},  ${eff},  r = ${P.ratio},  ${zaSym} = ${za},  z₁₋β = ${zb}  →  <b>n₁ = ${R.n1}</b>`;}
+    case 'bin':return P.design==='ni'
+      ?`n₁ = (${zaSym}+z₁₋β)²·[p₁q₁ + p₂q₂/r] / (Δ+m)²  ${w}  Δ+m = ${fmt((P.p2-P.p1)+P.margin)}  →  <b>n₁ = ${R.n1}</b>`
+      :`n₁ = [ ${zaSym}√((1+1/r)·p̄q̄) + z₁₋β√(p₁q₁+p₂q₂/r) ]² / (p₁−p₂)²  ${w}  p̄ = ${fmt((P.p1+P.ratio*P.p2)/(1+P.ratio))}  →  <b>n₁ = ${R.n1}</b>`;
+    case 'or':return `n₁ = (${zaSym}+z₁₋β)²·[1/(p₁q₁) + 1/(r·p₂q₂)] / ln²(OR)  ${w}  p₂ = ${fmt(P.p2)},  ln OR = ${fmt(Math.log(P.or))}  →  <b>n₁ = ${R.n1}</b>`;
+    case 'rr':return `n₁ = (${zaSym}+z₁₋β)²·[q₁/p₁ + q₂/(r·p₂)] / ln²(RR)  ${w}  p₂ = ${fmt(P.p2)} (= RR·p₁),  ln RR = ${fmt(Math.log(P.rr))}  →  <b>n₁ = ${R.n1}</b>`;
+    case 'hr':{const l1=Math.LN2/P.med1;
+      return `Schoenfeld:  D = (${zaSym}+z₁₋β)² / (π₁π₂·ln²HR) = <b>${Math.ceil(R.D)}</b> ${L().R.ev};   N = D / (π₁P₁+π₂P₂)  ${w}  P₁ = ${fmt(hrEventProb(l1,P.acc,P.fup))},  P₂ = ${fmt(hrEventProb(l1*P.hr,P.acc,P.fup))}`;}
+    case 'rmst':return `n₁ = (${zaSym}+z₁₋β)²·(v₁ + v₂/r) / Δμ²  ${w}  Δμ(τ=${P.tau}) = ${fmt(R.effRMST)},  v = ∫₀^τ m(t)²·λ dt / (S·G)`;
+    case 'count':return `n₁ = (${zaSym}+z₁₋β)²·[(1/(λ₁t)+k) + (1/(λ₂t)+k)/r] / ln²(RR)  ${w}  λ₁t = ${fmt(P.rate0*P.expo)},  k = ${P.disp}  →  <b>n₁ = ${R.n1}</b>`;
+  }
+}
+
+/* ================= calculation orchestration ================= */
+let charts={};
+function setProgress(frac){$('prog').classList.add('on');$('progBar').style.width=(100*frac).toFixed(1)+'%';}
+function clearProgress(){$('prog').classList.remove('on');$('progBar').style.width='0%';}
+function splitN(N,r){const n1=Math.max(2,Math.round(N/(1+r)));return {n1,n2:Math.max(2,N-n1)};}
+
+async function calculate(){
+  const {P,o,errs,seedFixed}=buildParams();
+  const eb=$('errBox');
+  if(errs.length){eb.innerHTML=errs.join('<br>');eb.classList.add('on');return;}
+  eb.classList.remove('on');
+  const btn=$('btnRun');btn.disabled=true;
+  try{
+    const R={P,o,seedFixed};
+    if(P.solve==='n'){
+      if(P.method==='formula'){
+        const n1s=solveNGeneric(P,POWFN[o.id]);
+        if(n1s===null)throw new Error(L().E.infeasible);
+        Object.assign(R,ceilPair(n1s,P.ratio));
+      }else{
+        const sr=await simSolveN(P,setProgress);
+        if(!sr)throw new Error(L().E.infeasible);
+        Object.assign(R,sr);
+      }
+      R.powerAnalytic=POWFN[o.id](R.n1,{...P,ratio:R.n2/R.n1});
+      R.Nrand=P.dropout>0?Math.ceil((R.n1+R.n2)/(1-P.dropout/100)):R.N;
+    }else{
+      const sp=splitN(P.Ntotal,P.ratio);
+      Object.assign(R,sp,{N:sp.n1+sp.n2});
+      const Peff={...P,ratio:sp.n2/sp.n1};
+      R.powerAnalytic=POWFN[o.id](sp.n1,Peff);
+      if(P.method==='sim')Object.assign(R,await runSimBatch(Peff,sp.n1,sp.n2,P.nsim,P.seed,setProgress));
+    }
+    if(o.id==='hr'){const l1=Math.LN2/P.med1;
+      R.D=R.n1*hrEventProb(l1,P.acc,P.fup)+R.n2*hrEventProb(l1*P.hr,P.acc,P.fup);}
+    if(o.id==='rmst'){const l1=Math.LN2/P.med1,l2=Math.LN2/P.med2;
+      R.effRMST=rmstMu(l2,P.tau)-rmstMu(l1,P.tau);
+      R.D=R.n1*hrEventProb(l1,P.acc,P.fup)+R.n2*hrEventProb(l2,P.acc,P.fup);}
+    R.warns=postWarnings(P,o,R.n1,R.n2);
+    lastR=R;
+    renderResults(R);
+  }catch(e){eb.textContent=e.message;eb.classList.add('on');}
+  finally{btn.disabled=false;clearProgress();}
+}
+
+/* ================= results rendering ================= */
+function ciTxt(p,n){const h=1.96*Math.sqrt(p*(1-p)/n);return `${pct(p)} <small>± ${(100*h).toFixed(1)} pp</small>`;}
+function effectVal(P,o,R){
+  switch(o.id){
+    case 'cont':return fmt(Math.abs(P.mu2-P.mu1)/P.sd,2)+'<small> δ</small>';
+    case 'bin':return fmt(P.p2-P.p1,3);
+    case 'or':case 'rr':return fmt(P.p2,3);
+    case 'hr':return fmt(P.hr,2);
+    case 'rmst':return fmt(R.effRMST,2)+`<small> ${L().R.tunits}</small>`;
+    case 'count':return fmt(P.rr,2);
+  }
+}
+function renderResults(R){
+  const {P,o}=R,isSim=P.method==='sim',T=L(),X=T.R;
+  let stats='';
+  const st=(lab,val,cls='')=>`<div class="stat"><div class="lab">${lab}</div><div class="val ${cls}">${val}</div></div>`;
+  stats+=st(X.ctrl,R.n1,'ctrl')+st(X.trt,R.n2,'trt')+st(X.fpow,pct(R.powerAnalytic));
+  if(isSim&&R.pU!==undefined)stats+=st(X.spow+(P.covOn?X.unadj:''),ciTxt(R.pU,R.nsim));
+  if(isSim&&P.covOn&&R.pA!=null)stats+=st(X.sadj,ciTxt(R.pA,R.nsim),'trt');
+  if(R.D!==undefined)stats+=st(X.events,Math.round(R.D));
+  stats+=st(X.eff[o.id],effectVal(P,o,R));
+
+  let head;
+  if(P.solve==='n'){
+    head=`<div class="n-block"><div class="lab">${X.totalN}</div>
+      <div class="N"><span class="nsym">N =</span>${R.N}</div>
+      <div class="after">${P.dropout>0?X.rand(R.Nrand,P.dropout):X.noDrop}</div></div>`;
+  }else{
+    const shown=isSim?(P.covOn&&R.pA!=null?R.pA:R.pU):R.powerAnalytic;
+    head=`<div class="n-block"><div class="lab">${X.powerAt(isSim,R.N)}</div>
+      <div class="N">${pct(shown)}</div>
+      <div class="after">${P.design==='ni'?T.one:T.two} α = ${P.alpha}${isSim?` · ${R.nsim} ${X.reps}`:''}</div></div>`;
+  }
+  const warnsHtml=R.warns.length?`<div class="warn-note">${R.warns.map(k=>T.W[k]).join('<br>')}</div>`:'';
+  let covCard='';
+  if(isSim&&P.covOn&&R.pA!=null){
+    const za=zAlpha(P);
+    const zU=za+qnorm(Math.min(.995,Math.max(.02,R.pU))),zA2=za+qnorm(Math.min(.995,Math.max(.02,R.pA)));
+    const saving=zA2>0&&zU>0&&R.pA>R.pU?1-(zU/zA2)**2:null;
+    covCard=`<section class="card"><h2><span>${X.cov}</span><span class="t">ρ = ${P.rho.toFixed(2)}</span></h2>
+      <div class="cov-body">
+        <div class="cov-read">
+          <div class="delta">${R.pA>=R.pU?'+':'−'}${(100*Math.abs(R.pA-R.pU)).toFixed(1)} pp</div>
+          <div>${X.covPP}</div>
+          ${saving!==null&&saving>0.005?`<div style="margin-top:8px">${X.covSave((100*saving).toFixed(0))}</div>`:''}
+          ${(o.id==='or'||o.id==='hr')?`<div class="small">${X.covCond}</div>`:''}
+        </div>
+        <div class="cov-chart-box"><canvas id="covChart" aria-label="${X.unadjL} / ${X.adjL}"></canvas></div>
+      </div></section>`;
+  }
+  $('results').innerHTML=`
+   <section class="card">
+     <div class="headline">${head}<div class="stat-grid">${stats}</div></div>
+     ${warnsHtml}
+     <div class="formula-strip">${formulaStrip(P,o,R)}</div>
+   </section>
+   <section class="card">
+     <h2><span>${X.paper}</span><button class="btn" id="copyPaper" type="button">${X.copy}</button></h2>
+     <p class="paper-text" id="paperText">${T.paper(R)}</p>
+   </section>
+   <section class="card">
+     <h2>${X.fig}</h2>
+     <div class="chart-box"><canvas id="powerChart"></canvas></div>
+     <div class="chart-note">${X.note(isSim)}</div>
+   </section>
+   ${covCard}
+   <section class="card"><details class="methods"><summary>${X.methods}</summary>
+     <div class="m-body">${T.M[o.id]}${isSim?T.M.mc:''}</div></details></section>`;
+  $('copyPaper').addEventListener('click',async e=>{
+    const b=e.currentTarget;
+    try{await navigator.clipboard.writeText($('paperText').textContent);b.textContent=X.copied;}
+    catch(err){const r=document.createRange();r.selectNodeContents($('paperText'));const s=getSelection();s.removeAllRanges();s.addRange(r);}
+    setTimeout(()=>{b.textContent=X.copy},2000);
+  });
+  drawPowerChart(R);
+  if(isSim&&P.covOn&&R.pA!=null)drawCovChart(R);
+}
+
+/* ================= charts (colours read from the theme tokens) ================= */
+const cssv=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const chartFont={family:"'Atkinson Hyperlegible','Segoe UI',system-ui,sans-serif",size:12};
+function destroyChart(k){if(charts[k]){charts[k].destroy();delete charts[k];}}
+function drawPowerChart(R){
+  destroyChart('power');
+  if(typeof Chart==='undefined')return;
+  const {P,o}=R,r=R.n2/R.n1,X=L().R;
+  const ink=cssv('--ink'),muted=cssv('--muted'),grid=cssv('--grid'),ctl=cssv('--ctl'),trt=cssv('--trt'),surf=cssv('--surface');
+  Chart.defaults.color=muted;Chart.defaults.borderColor=grid;
+  const Nstar=R.N,lo=Math.max(6,Math.round(Nstar*0.3)),hi=Math.round(Nstar*2.1);
+  const pts=[],ptsAdj=[];
+  for(let i=0;i<=40;i++){
+    const N=lo+(hi-lo)*i/40,n1=N/(1+r);
+    pts.push({x:Math.round(N),y:100*POWFN[o.id](n1,{...P,ratio:r,covAnalytic:false})});
+    if(P.covOn&&o.id==='cont')ptsAdj.push({x:Math.round(N),y:100*POWFN[o.id](n1,{...P,ratio:r,covAnalytic:true})});
+  }
+  const ds=[{type:'line',label:X.dsF,data:pts,borderColor:ink,borderWidth:2,pointRadius:0,tension:.25}];
+  if(ptsAdj.length)ds.push({type:'line',label:X.dsA,data:ptsAdj,borderColor:trt,borderDash:[6,4],borderWidth:2,pointRadius:0,tension:.25});
+  if(P.solve==='n')ds.push({type:'line',label:X.dsT,data:[{x:lo,y:100*P.targetPower},{x:hi,y:100*P.targetPower}],borderColor:muted,borderDash:[3,4],borderWidth:1.4,pointRadius:0});
+  if(P.method==='sim'&&R.pU!==undefined){
+    ds.push({type:'scatter',label:X.dsSU,data:[{x:R.N,y:100*R.pU}],backgroundColor:ctl,borderColor:surf,borderWidth:1.5,pointRadius:7,pointHoverRadius:8});
+    if(P.covOn&&R.pA!=null)ds.push({type:'scatter',label:X.dsSA,data:[{x:R.N,y:100*R.pA}],backgroundColor:trt,borderColor:surf,borderWidth:1.5,pointRadius:7,pointHoverRadius:8});
+  }else{
+    ds.push({type:'scatter',label:X.dsD,data:[{x:R.N,y:100*R.powerAnalytic}],backgroundColor:trt,borderColor:surf,borderWidth:1.5,pointRadius:7});
+  }
+  const ciBars=(P.method==='sim'&&R.pU!==undefined)?[{p:R.pU,color:ctl},...(P.covOn&&R.pA!=null?[{p:R.pA,color:trt}]:[])]:[];
+  charts.power=new Chart($('powerChart'),{
+    data:{datasets:ds},
+    options:{responsive:true,maintainAspectRatio:false,animation:{duration:350},
+      scales:{
+        x:{type:'linear',title:{display:true,text:X.xax,font:chartFont},grid:{color:grid},ticks:{font:chartFont}},
+        y:{min:0,max:100,title:{display:true,text:X.yax,font:chartFont},grid:{color:grid},ticks:{font:chartFont,callback:v=>v+'%'}}},
+      plugins:{legend:{labels:{font:{...chartFont,size:11.5},boxWidth:18,color:muted}},
+        tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${c.parsed.y.toFixed(1)}% ${X.at} ${c.parsed.x}`}}}},
+    plugins:[{id:'ciBars',afterDatasetsDraw(ch){
+      if(!ciBars.length)return;
+      const {ctx}=ch,xs=ch.scales.x,ys=ch.scales.y;
+      ciBars.forEach(b=>{
+        const h=1.96*Math.sqrt(b.p*(1-b.p)/R.nsim),x=xs.getPixelForValue(R.N);
+        ctx.save();ctx.strokeStyle=b.color;ctx.lineWidth=2;ctx.beginPath();
+        ctx.moveTo(x,ys.getPixelForValue(100*Math.min(1,b.p+h)));
+        ctx.lineTo(x,ys.getPixelForValue(100*Math.max(0,b.p-h)));
+        ctx.stroke();ctx.restore();});
+    }}]});
+}
+function drawCovChart(R){
+  destroyChart('cov');
+  if(typeof Chart==='undefined')return;
+  const X=L().R,grid=cssv('--grid');
+  charts.cov=new Chart($('covChart'),{
+    type:'bar',
+    data:{labels:[X.unadjL,X.adjL],
+      datasets:[{data:[100*R.pU,100*R.pA],backgroundColor:[cssv('--ctl'),cssv('--trt')],borderRadius:8,maxBarThickness:64}]},
+    options:{responsive:true,maintainAspectRatio:false,animation:{duration:350},
+      scales:{y:{min:0,max:100,ticks:{font:chartFont,callback:v=>v+'%'},grid:{color:grid}},
+              x:{ticks:{font:chartFont},grid:{display:false}}},
+      plugins:{legend:{display:false},
+        tooltip:{callbacks:{label:c=>{const p=c.parsed.y/100,h=196*Math.sqrt(p*(1-p)/R.nsim);
+          return `${c.parsed.y.toFixed(1)}% (${X.ci} ± ${h.toFixed(1)} pp)`;}}}}}});
+}
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{if(lastR)renderResults(lastR)});
+
+/* ================= language ================= */
+function setLanguage(code){
+  saveInputs(OUT.find(x=>x.id===S.outcome));
+  lang=code;const T=L();
+  document.documentElement.lang=code;document.title=T.title;
+  $('h1').textContent=T.title;$('sub').textContent=T.sub;$('foot').innerHTML=T.foot;
+  $('inputsLab').textContent=T.inputs;$('nav').setAttribute('aria-label',T.outcomeAria);
+  document.querySelector('.languages').setAttribute('aria-label',T.lang);
+  document.querySelectorAll('.lang').forEach(b=>b.setAttribute('aria-pressed',b.dataset.lang===code));
+  renderNav();renderForm();
+  if(lastR)renderResults(lastR);else renderEmpty();
+}
+document.querySelectorAll('.lang').forEach(b=>b.addEventListener('click',()=>{setLanguage(b.dataset.lang);try{localStorage.setItem('ssize-lang',lang)}catch(e){}}));
+
+/* ================= init ================= */
+setLanguage(lang);
+</script>
+</body>
+</html>
