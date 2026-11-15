@@ -604,16 +604,21 @@ function clusterPower(P,k1,k2){
 }
 
 function solveClusterCount(P){
-  const power=K=>{const {n1,n2}=splitClusters(K,P.ratio);return clusterPower(P,n1,n2);};
-  let lo=4,hi=4;
-  while(power(hi)<P.targetPower&&hi<MAX_CLUSTERS)hi=Math.min(MAX_CLUSTERS,hi*2);
+  const step=P.ratio===1?2:1;
+  const power=i=>{
+    const {n1,n2}=splitClusters(i*step,P.ratio);
+    return clusterPower(P,n1,n2);
+  };
+  const limit=MAX_CLUSTERS/step;
+  let lo=4/step,hi=lo;
+  while(power(hi)<P.targetPower&&hi<limit)hi=Math.min(limit,hi*2);
   if(!(power(hi)>=P.targetPower))return null;
   while(lo<hi){
     const mid=Math.floor((lo+hi)/2);
     if(power(mid)>=P.targetPower)hi=mid;
     else lo=mid+1;
   }
-  return lo;
+  return lo*step;
 }
 
 function clusterBeta(a,b,rng){
@@ -735,7 +740,8 @@ async function simSolveN(P,onProg){
     if(Math.abs(p-P.targetPower)<=Math.max(0.015,mce*0.75))break;
     const num=za+qnorm(P.targetPower),den=za+qnorm(p);
     const ratio=den>0.05?(num/den)**2:4;
-    const next=Math.max(4,Math.ceil(size*Math.min(6,Math.max(0.17,ratio))));
+    const step=P.clustered&&P.ratio===1?2:1;
+    const next=Math.max(4,step*Math.ceil(size*Math.min(6,Math.max(0.17,ratio))/step));
     if(next===size)break;
     size=next;
   }
@@ -1054,7 +1060,7 @@ const CLUSTER_COPY={
     badSize:'Enter a whole cluster size from 2 to 1,000,000.',
     badICC:'ICC must be between 0 and 1.',
     badK:'Enter a whole number of clusters from 4 to 8,000,000. Each arm needs at least two clusters.',
-    badDrop:'Cluster dropout must be at least 0% and below 100%.',
+    badDrop:'Cluster dropout must be between 0% and 99.9%.',
     badCount:'The expected number of events per cluster is too large.',
     infeasible:'The formula could not reach the target power within 8 million clusters.',
     simLimit:'This design is too large to simulate in the browser. Try fewer replicates or use Formula.',
@@ -1077,7 +1083,7 @@ const CLUSTER_COPY={
     badSize:'Introduzca un tamaño de conglomerado entero entre 2 y 1 000 000.',
     badICC:'La ICC debe estar entre 0 y 1.',
     badK:'Introduzca un número entero de conglomerados entre 4 y 8 000 000. Cada grupo necesita al menos dos.',
-    badDrop:'La pérdida de conglomerados debe ser al menos 0% e inferior al 100%.',
+    badDrop:'La pérdida de conglomerados debe estar entre el 0% y el 99,9%.',
     badCount:'El número esperado de eventos por conglomerado es demasiado alto.',
     infeasible:'La fórmula no alcanzó la potencia objetivo con hasta 8 millones de conglomerados.',
     simLimit:'El diseño es demasiado grande para simularlo en el navegador. Reduzca las réplicas o use Fórmula.',
@@ -1100,7 +1106,7 @@ const CLUSTER_COPY={
     badSize:'Introduza um tamanho de conglomerado inteiro entre 2 e 1 000 000.',
     badICC:'A ICC deve estar entre 0 e 1.',
     badK:'Introduza um número inteiro de conglomerados entre 4 e 8 000 000. Cada grupo precisa de pelo menos dois.',
-    badDrop:'A perda de conglomerados deve ser de pelo menos 0% e inferior a 100%.',
+    badDrop:'A perda de conglomerados deve estar entre 0% e 99,9%.',
     badCount:'O número esperado de eventos por conglomerado é demasiado elevado.',
     infeasible:'A fórmula não atingiu a potência pretendida com até 8 milhões de conglomerados.',
     simLimit:'O desenho é demasiado grande para simular no navegador. Reduza as réplicas ou use Fórmula.',
@@ -1187,7 +1193,7 @@ function renderForm(){
    </div>
    <div class="row2">
     <div class="field"><label for="f_ratio">${clustered?c.allocation:T.alloc}</label><input type="number" id="f_ratio" value="${S.ratio}" step="0.25" min="0.2" max="5"></div>
-    ${S.solve==='n'?`<div class="field"><label for="${clustered?'f_clusterDrop':'f_drop'}">${clustered?c.drop:T.drop}<span class="hint">${clustered?c.dropHint:T.dropH}</span></label><input type="number" id="${clustered?'f_clusterDrop':'f_drop'}" value="${clustered?S.clusterDropout:S.dropout}" step="${clustered?'any':5}" min="0" max="${clustered?99.99:60}"></div>`:'<div></div>'}
+    ${S.solve==='n'?`<div class="field"><label for="${clustered?'f_clusterDrop':'f_drop'}">${clustered?c.drop:T.drop}<span class="hint">${clustered?c.dropHint:T.dropH}</span></label><input type="number" id="${clustered?'f_clusterDrop':'f_drop'}" value="${clustered?S.clusterDropout:S.dropout}" step="${clustered?'any':5}" min="0" max="${clustered?99.9:60}"></div>`:'<div></div>'}
    </div>
    <div class="field"><span class="flab">${T.solve}</span>${segHTML('segSolve',[{v:'n',t:T.sN},{v:'power',t:T.sP}],S.solve)}</div>
   </fieldset>`;
@@ -1287,7 +1293,7 @@ function buildParams(){
     if(!Number.isInteger(P.clusterSize)||P.clusterSize<2||P.clusterSize>1_000_000)errs.push(c.badSize);
     if(!(P.icc>=0&&P.icc<=1))errs.push(c.badICC);
     if(P.solve==='power'&&(!Number.isInteger(P.Ktotal)||P.Ktotal<4||P.Ktotal>MAX_CLUSTERS))errs.push(c.badK);
-    if(!(P.dropout>=0&&P.dropout<100))errs.push(c.badDrop);
+    if(!(P.dropout>=0&&P.dropout<=99.9))errs.push(c.badDrop);
     if(o.id==='count'&&P.rate0*P.expo*Math.max(1,P.rr)*P.clusterSize>1e12)errs.push(c.badCount);
   }
   bad(!(P.ratio>=0.2&&P.ratio<=5),'ratio');
@@ -1332,7 +1338,7 @@ function postWarnings(P,o,n1,n2){ // warning keys, translated at render time
 
 /* ================= formula strips (with substituted values) ================= */
 function formulaStrip(P,o,R){
-  if(P.clustered)return C().analysis;
+  if(P.clustered)return `1 + (${P.clusterSize} − 1) × ${P.icc} = <b>${nf(clusterDesignEffect(P))}</b>`;
   const za=zAlpha(P).toFixed(3),zb=qnorm(P.targetPower).toFixed(3),w=L().R.with;
   const zaSym=P.design==='ni'?'z₁₋α':'z₁₋α/₂';
   switch(o.id){
@@ -1480,7 +1486,7 @@ function renderResults(R){
    </section>
    ${covCard}
    <section class="card"><details class="methods"><summary>${X.methods}</summary>
-     <div class="m-body">${P.clustered?(isSim?`<p>${c.boundaries}</p>`:''):T.M[o.id]}${isSim?T.M.mc:''}</div></details></section>`;
+     <div class="m-body">${P.clustered?`<p>${c.analysis}</p>${isSim?`<p>${c.boundaries}</p>`:''}`:T.M[o.id]}${isSim?T.M.mc:''}</div></details></section>`;
   $('copyPaper').addEventListener('click',async e=>{
     const b=e.currentTarget;
     try{await navigator.clipboard.writeText($('paperText').textContent);b.textContent=X.copied;}
