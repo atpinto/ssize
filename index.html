@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Sample size and power</title>
-<meta name="description" content="Sample size and power for two-arm randomised trials: continuous, binary, odds ratio, relative risk, hazard ratio, RMST and count outcomes, by formula or simulation.">
+<meta name="description" content="Sample size and power for two-arm randomised trials: continuous, binary, odds ratio, relative risk, hazard ratio, RMST and count outcomes, by formula or simulation, with optional cluster randomisation.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23172031'/%3E%3Cpath d='M6 24c6 0 6-15 10-15s4 15 10 15' stroke='%23FF7247' stroke-width='2.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -533,6 +533,169 @@ function simCount(P,n1,n2,rng){
   const rejU=(se>0&&Math.abs(Math.log(m2/m1))/se>qnorm(1-P.alpha/2))?1:0;
   return {rejU,rejA:null};
 }
+/* ================= equal-size cluster-randomised trials ================= */
+const MAX_CLUSTERS=8_000_000;
+const CLUSTER_OUTCOMES=new Set(['cont','bin','or','rr','count']);
+
+function clusterDesignEffect(P){
+  return 1+(P.clusterSize-1)*P.icc;
+}
+
+function splitClusters(K,ratio){
+  const k1=Math.min(K-2,Math.max(2,Math.round(K/(1+ratio))));
+  return {n1:k1,n2:K-k1,N:K};
+}
+
+// On the chosen effect scale, return the expected arm contrast and the
+// variance of each arm's contribution for one independent observation.
+function clusterEffect(P,m1,m2,v1,v2){
+  if(P.outcome==='or'){
+    return [Math.log(m2/(1-m2))-Math.log(m1/(1-m1)),
+      v1/(m1*(1-m1))**2,v2/(m2*(1-m2))**2];
+  }
+  if(P.outcome==='rr'||P.outcome==='count'){
+    return [Math.log(m2)-Math.log(m1),v1/m1**2,v2/m2**2];
+  }
+  return [m2-m1+(P.design==='ni'?P.margin:0),v1,v2];
+}
+
+// Integrate the t tail after t = sqrt(df) tan(theta). This avoids
+// the loss of accuracy of the asymptotic quantile at very small df.
+const T_NODES=[.0950125098,.2816035508,.4580167777,.6178762444,.7554044084,.8656312024,.9445750231,.9894009350];
+const T_WEIGHTS=[.1894506105,.1826034150,.1691565194,.1495959888,.1246289713,.0951585117,.0622535239,.0271524594];
+function tTailIntegral(width,df){
+  const half=width/2;
+  return half*T_NODES.reduce((sum,x,i)=>sum+T_WEIGHTS[i]*(
+    Math.sin(half*(1-x))**(df-1)+Math.sin(half*(1+x))**(df-1)),0);
+}
+
+function clusterCritical(tail,df){
+  if(df>=30)return tinv(1-tail,df);
+  const target=2*tail*tTailIntegral(Math.PI/2,df);
+  let lo=0,hi=Math.PI/2;
+  for(let i=0;i<40;i++){
+    const mid=(lo+hi)/2;
+    if(tTailIntegral(mid,df)<target)lo=mid;
+    else hi=mid;
+  }
+  return Math.sqrt(df)/Math.tan((lo+hi)/2);
+}
+
+function clusterTestStats(P,k1,k2,effect,v1,v2){
+  const s1=v1/k1,s2=v2/k2,se2=s1+s2;
+  const df=se2**2/(s1**2/(k1-1)+s2**2/(k2-1));
+  return {z:effect/Math.sqrt(se2),df,tail:P.alpha/(P.design==='ni'?1:2)};
+}
+
+function clusterPower(P,k1,k2){
+  let m1,m2,v1,v2;
+  if(P.outcome==='cont'){
+    m1=P.mu1;m2=P.mu2;v1=v2=P.sd**2;
+  }else if(P.outcome==='count'){
+    m1=P.rate0*P.expo;m2=m1*P.rr;
+    v1=m1+P.disp*m1**2;v2=m2+P.disp*m2**2;
+  }else{
+    m1=P.p1;m2=P.p2;v1=m1*(1-m1);v2=m2*(1-m2);
+  }
+  const scale=clusterDesignEffect(P)/P.clusterSize;
+  const {z,df,tail}=clusterTestStats(P,k1,k2,...clusterEffect(P,m1,m2,v1*scale,v2*scale));
+  const critical=clusterCritical(tail,df);
+  return P.design==='ni'?pnorm(z-critical):pnorm(Math.abs(z)-critical)+pnorm(-Math.abs(z)-critical);
+}
+
+function solveClusterCount(P){
+  const power=K=>{const {n1,n2}=splitClusters(K,P.ratio);return clusterPower(P,n1,n2);};
+  let lo=4,hi=4;
+  while(power(hi)<P.targetPower&&hi<MAX_CLUSTERS)hi=Math.min(MAX_CLUSTERS,hi*2);
+  if(!(power(hi)>=P.targetPower))return null;
+  while(lo<hi){
+    const mid=Math.floor((lo+hi)/2);
+    if(power(mid)>=P.targetPower)hi=mid;
+    else lo=mid+1;
+  }
+  return lo;
+}
+
+function clusterBeta(a,b,rng){
+  const x=rng.gamma(a),y=rng.gamma(b);
+  // At tiny total concentration, both gamma draws can underflow.
+  return x+y>0?x/(x+y):Number(rng.unif()<a/(a+b));
+}
+
+function clusterBinomial(n,p,rng){
+  let total=0;
+  // Condition on the middle uniform order statistic to halve large problems.
+  while(n>24&&p>0&&p<1){
+    const k=Math.ceil(n/2);
+    const x=clusterBeta(k,n-k+1,rng);
+    if(x<=p){total+=k;n-=k;p=(p-x)/(1-x);}
+    else{n=k-1;p/=x;}
+  }
+  if(p>=1)return total+n;
+  if(!(p>0))return total;
+  for(let i=0;i<n;i++)total+=Number(rng.unif()<p);
+  return total;
+}
+
+function clusterPoisson(mean,rng){
+  let total=0;
+  // At high means, condition on the time of the k-th arrival.
+  while(mean>=30){
+    const k=Math.floor(mean/2);
+    const arrival=rng.gamma(k);
+    if(arrival>mean)return total+clusterBinomial(k-1,mean/arrival,rng);
+    total+=k;
+    mean-=arrival;
+  }
+  return total+rng.pois(mean);
+}
+
+function clusterDraw(P,arm,rng){
+  const m=P.clusterSize,rho=P.icc;
+  if(P.outcome==='cont'){
+    const mu=arm?P.mu2:P.mu1,sd=P.sd*Math.sqrt(clusterDesignEffect(P)/m);
+    return ()=>mu+sd*rng.norm();
+  }
+  if(P.outcome==='count'){
+    const mu=P.rate0*P.expo*(arm?P.rr:1),k=P.disp;
+    // Shared and independent components have the same NB scale.
+    // The shared fraction contributes rho of the marginal variance.
+    const count=weight=>{
+      if(weight<=0)return 0;
+      const shape=weight/k;
+      const intensity=Number.isFinite(shape)?rng.gamma(shape)/shape:1;
+      return clusterPoisson(weight*mu*intensity,rng);
+    };
+    return ()=>(count(rho)*m+count(m*(1-rho)))/m;
+  }
+  const p=arm?P.p2:P.p1,concentration=(1-rho)/rho;
+  if(rho===1)return ()=>Number(rng.unif()<p);
+  return ()=>clusterBinomial(m,rho<Number.EPSILON?p:clusterBeta(p*concentration,(1-p)*concentration,rng),rng)/m;
+}
+
+function clusterMoments(k,draw){
+  let mean=0,ss=0;
+  for(let i=1;i<=k;i++){
+    const y=draw(),d=y-mean;
+    mean+=d/i;
+    ss+=d*(y-mean);
+  }
+  return [mean,ss/(k-1)];
+}
+
+function simCluster(P,k1,k2,rng){
+  const [m1,v1]=clusterMoments(k1,clusterDraw(P,false,rng));
+  const [m2,v2]=clusterMoments(k2,clusterDraw(P,true,rng));
+  const {z,df,tail}=clusterTestStats(P,k1,k2,...clusterEffect(P,m1,m2,v1,v2));
+  const t=P.design==='ni'?z:Math.abs(z);
+  let reject=false;
+  if(Number.isFinite(t)&&t>0){
+    reject=df>=30?t>clusterCritical(tail,df):
+      tTailIntegral(Math.atan(Math.sqrt(df)/t),df)<2*tail*tTailIntegral(Math.PI/2,df);
+  }
+  return {rejU:Number(reject),rejA:null};
+}
+
 const SIMFN={cont:simContinuous,bin:(P,a,b,r)=>simBinaryLike(P,a,b,r,'rd'),or:(P,a,b,r)=>simBinaryLike(P,a,b,r,'or'),rr:(P,a,b,r)=>simBinaryLike(P,a,b,r,'rr'),hr:simHR,rmst:simRMST,count:simCount};
 const POWFN={cont:powContinuous,bin:powBinary,or:powOR,rr:powRR,hr:powHR,rmst:powRMST,count:powCount};
 const SIMCHUNK={cont:200,bin:120,or:120,rr:120,hr:40,rmst:60,count:150};
@@ -540,9 +703,12 @@ const SIMCHUNK={cont:200,bin:120,or:120,rr:120,hr:40,rmst:60,count:150};
 const tick=()=>new Promise(r=>setTimeout(r,0));
 async function runSimBatch(P,n1,n2,nsim,seed,onProg){
   const rng=makeRng(seed);let rU=0,rA=0,nA=0;
-  const ch=SIMCHUNK[P.outcome];
+  const simulate=P.clustered?simCluster:SIMFN[P.outcome];
+  const units=n1+n2;
+  if(P.clustered&&units*nsim>10_000_000)throw new Error(C().simLimit);
+  const ch=P.clustered?Math.max(1,Math.min(100,Math.floor(20_000/units))):SIMCHUNK[P.outcome];
   for(let i=0;i<nsim;i++){
-    const res=SIMFN[P.outcome](P,n1,n2,rng);
+    const res=simulate(P,n1,n2,rng);
     rU+=res.rejU;
     if(res.rejA!==null){rA+=res.rejA;nA++;}
     if((i+1)%ch===0){onProg((i+1)/nsim);await tick();}
@@ -552,13 +718,14 @@ async function runSimBatch(P,n1,n2,nsim,seed,onProg){
 }
 async function simSolveN(P,onProg){
   const za=zAlpha(P);
-  let n1f=solveNGeneric(P,POWFN[P.outcome]);
-  if(n1f===null)return null;
-  let n1=Math.max(4,Math.ceil(n1f));
+  const start=P.clustered?solveClusterCount(P):solveNGeneric(P,POWFN[P.outcome]);
+  if(start===null)return null;
+  let size=Math.max(4,Math.ceil(start));
+  const pair=P.clustered?splitClusters:ceilPair;
   const searchSim=Math.min(P.nsim,Math.max(400,Math.round(P.nsim/2)));
   const trace=[];
   for(let pass=0;pass<4;pass++){
-    const pr=ceilPair(n1,P.ratio);
+    const pr=pair(size,P.ratio);
     const res=await runSimBatch(P,pr.n1,pr.n2,searchSim,P.seed+11*pass+1,
       f=>onProg(f,`Search pass ${pass+1}`));
     let p=P.covOn&&res.pA!==null?res.pA:res.pU;
@@ -568,11 +735,11 @@ async function simSolveN(P,onProg){
     if(Math.abs(p-P.targetPower)<=Math.max(0.015,mce*0.75))break;
     const num=za+qnorm(P.targetPower),den=za+qnorm(p);
     const ratio=den>0.05?(num/den)**2:4;
-    const next=Math.max(4,Math.ceil(n1*Math.min(6,Math.max(0.17,ratio))));
-    if(next===n1)break;
-    n1=next;
+    const next=Math.max(4,Math.ceil(size*Math.min(6,Math.max(0.17,ratio))));
+    if(next===size)break;
+    size=next;
   }
-  const pr=ceilPair(n1,P.ratio);
+  const pr=pair(size,P.ratio);
   const fin=await runSimBatch(P,pr.n1,pr.n2,P.nsim,P.seed+97,f=>onProg(f,"Confirming"));
   return {...pr,...fin,trace};
 }
@@ -591,13 +758,14 @@ function effVals(P,R){
 function paperNums(R){
   const {P}=R,isSim=P.method==='sim';
   const sp=isSim?(P.covOn&&R.pA!=null?R.pA:R.pU):null,h=isSim?1.96*Math.sqrt(sp*(1-sp)/R.nsim):0;
-  return {N:R.N,n1:R.n1,n2:R.n2,r:nf(P.ratio,2),eq:R.n1===R.n2,
-    pow:nf(100*(isSim?sp:(P.solve==='n'?P.targetPower:R.powerAnalytic)),1),atLeast:P.solve==='n'&&!isSim,
+  return {N:R.N,n1:R.n1,n2:R.n2,r:nf(P.clustered?R.k2/R.k1:P.ratio,2),eq:R.n1===R.n2,
+    pow:nf(100*(isSim?sp:(P.solve==='n'&&!P.clustered?P.targetPower:R.powerAnalytic)),1),atLeast:P.solve==='n'&&!isSim&&!P.clustered,
     alpha:nf(P.alpha,4),one:P.design==='ni',isSim,sp:isSim?nf(100*sp,1):'',lo:isSim?nf(100*Math.max(0,sp-h),1):'',hi:isSim?nf(100*Math.min(1,sp+h),1):'',
     nsim:R.nsim,seed:R.seedFixed?P.seed:null,cov:isSim&&P.covOn&&R.pA!=null,rho:nf(P.rho,2),pU:isSim?nf(100*R.pU,1):'',
-    drop:P.solve==='n'&&P.dropout>0?nf(P.dropout,1):null,Nrand:R.Nrand,hr:P.outcome==='hr'};
+    drop:!P.clustered&&P.solve==='n'&&P.dropout>0?nf(P.dropout,1):null,Nrand:R.Nrand,hr:P.outcome==='hr'};
 }
 function testName(L,P){
+  if(P.clustered)return C().paperTest;
   const t=L.tests[P.outcome==='bin'&&P.design==='ni'?'binNI':P.outcome];
   return P.method==='sim'?(P.covOn?t[2]:t[1]):t[0];
 }
@@ -671,8 +839,12 @@ en:{
   let s=P.solve==='n'?`A total of ${d.N} participants (${arms}) will provide ${pw} to ${tail}`:`With a total of ${d.N} participants (${arms}), the study will have ${pw} to ${tail}`;
   if(d.cov)s+=` The analysis adjusts for a baseline covariate assumed to have a correlation of ${d.rho} with the outcome; without adjustment the simulated power would be ${d.pU}%.`;
   s+=d.isSim?` Power was estimated by Monte Carlo simulation with ${d.nsim} simulated trials${d.seed!=null?` (random seed ${d.seed})`:''}; the 95% CI for the estimated power is ${d.lo}% to ${d.hi}%.`
-    :` The calculation used the closed-form normal approximation${d.hr?' (Schoenfeld’s formula for the required number of events)':''}.`;
+    :P.clustered?C().paperMethod:` The calculation used the closed-form normal approximation${d.hr?' (Schoenfeld’s formula for the required number of events)':''}.`;
   if(d.drop)s+=` To allow for ${d.drop}% loss to follow-up, ${d.Nrand} participants will be randomised.`;
+  if(P.clustered){
+    s+=C().paperDesign(R.k1,R.k2,P.clusterSize,P.icc);
+    if(P.dropout>0)s+=' '+C().recruit(R.Krand,R.Nrand,P.dropout);
+  }
   return s+` Calculations were done with the sample size and power calculator by Teixeira-Pinto (${URL_SELF}).`;},
  M:{cont:`<p><strong>Formula.</strong> Two-sample normal approximation for a difference in means with unequal allocation; superiority uses two-sided α, non-inferiority tests H₀: μ<sub>T</sub>−μ<sub>C</sub> ≤ −m at one-sided α (higher assumed better).</p>
 <p><strong>Simulation.</strong> Normal outcomes analysed by Welch's t-test. With a baseline covariate on, (X, Y) are bivariate normal with correlation ρ and the adjusted analysis is ANCOVA (Y ~ arm + X). The residual SD shrinks by √(1−ρ²), which is exactly the closed-form gain — the dashed analytic ANCOVA curve is overlaid so you can see the simulation agree with it.</p>`,
@@ -757,8 +929,12 @@ es:{
   let s=P.solve==='n'?`Un total de ${d.N} participantes (${arms}) proporcionará ${pw} para ${tail}`:`Con un total de ${d.N} participantes (${arms}), el estudio tendrá ${pw} para ${tail}`;
   if(d.cov)s+=` El análisis se ajustará por una covariable basal con una correlación supuesta de ${d.rho} con el desenlace; sin ajuste, la potencia simulada sería del ${d.pU}%.`;
   s+=d.isSim?` La potencia se estimó mediante simulación de Monte Carlo con ${d.nsim} ensayos simulados${d.seed!=null?` (semilla ${d.seed})`:''}; el IC del 95% de la potencia estimada es ${d.lo}% a ${d.hi}%.`
-    :` El cálculo utilizó la aproximación normal de forma cerrada${d.hr?' (fórmula de Schoenfeld para el número de eventos necesario)':''}.`;
+    :P.clustered?C().paperMethod:` El cálculo utilizó la aproximación normal de forma cerrada${d.hr?' (fórmula de Schoenfeld para el número de eventos necesario)':''}.`;
   if(d.drop)s+=` Para compensar un ${d.drop}% de pérdidas en el seguimiento, se aleatorizarán ${d.Nrand} participantes.`;
+  if(P.clustered){
+    s+=C().paperDesign(R.k1,R.k2,P.clusterSize,P.icc);
+    if(P.dropout>0)s+=' '+C().recruit(R.Krand,R.Nrand,P.dropout);
+  }
   return s+` Los cálculos se realizaron con la calculadora de tamaño muestral y potencia de Teixeira-Pinto (${URL_SELF}).`;},
  M:{cont:`<p><strong>Fórmula.</strong> Aproximación normal para la diferencia de dos medias con asignación desigual; la superioridad usa α bilateral y la no inferioridad contrasta H₀: μ<sub>T</sub>−μ<sub>C</sub> ≤ −m con α unilateral (valores más altos son mejores).</p>
 <p><strong>Simulación.</strong> Desenlaces normales analizados con la prueba t de Welch. Con la covariable basal activada, (X, Y) son normales bivariantes con correlación ρ y el análisis ajustado es un ANCOVA (Y ~ grupo + X). La DE residual se reduce en un factor √(1−ρ²), que es exactamente la ganancia de la fórmula: la curva ANCOVA analítica discontinua se superpone para comprobar que la simulación coincide.</p>`,
@@ -843,8 +1019,12 @@ pt:{
   let s=P.solve==='n'?`Um total de ${d.N} participantes (${arms}) proporcionará ${pw} para ${tail}`:`Com um total de ${d.N} participantes (${arms}), o estudo terá ${pw} para ${tail}`;
   if(d.cov)s+=` A análise será ajustada para uma covariável basal com uma correlação assumida de ${d.rho} com o desfecho; sem ajuste, a potência simulada seria de ${d.pU}%.`;
   s+=d.isSim?` A potência foi estimada por simulação de Monte Carlo com ${d.nsim} ensaios simulados${d.seed!=null?` (semente ${d.seed})`:''}; o IC a 95% da potência estimada é ${d.lo}% a ${d.hi}%.`
-    :` O cálculo utilizou a aproximação normal em forma fechada${d.hr?' (fórmula de Schoenfeld para o número de eventos necessário)':''}.`;
+    :P.clustered?C().paperMethod:` O cálculo utilizou a aproximação normal em forma fechada${d.hr?' (fórmula de Schoenfeld para o número de eventos necessário)':''}.`;
   if(d.drop)s+=` Para compensar ${d.drop}% de perdas de seguimento, serão aleatorizados ${d.Nrand} participantes.`;
+  if(P.clustered){
+    s+=C().paperDesign(R.k1,R.k2,P.clusterSize,P.icc);
+    if(P.dropout>0)s+=' '+C().recruit(R.Krand,R.Nrand,P.dropout);
+  }
   return s+` Os cálculos foram efetuados com a calculadora de dimensão amostral e potência de Teixeira-Pinto (${URL_SELF}).`;},
  M:{cont:`<p><strong>Fórmula.</strong> Aproximação normal para a diferença de duas médias com alocação desigual; a superioridade usa α bilateral e a não inferioridade testa H₀: μ<sub>T</sub>−μ<sub>C</sub> ≤ −m com α unilateral (valores maiores são melhores).</p>
 <p><strong>Simulação.</strong> Desfechos normais analisados com o teste t de Welch. Com a covariável basal ativa, (X, Y) são normais bivariados com correlação ρ e a análise ajustada é uma ANCOVA (Y ~ grupo + X). O DP residual diminui por um fator √(1−ρ²), que é exatamente o ganho da fórmula: a curva ANCOVA analítica tracejada é sobreposta para se ver que a simulação concorda.</p>`,
@@ -864,6 +1044,79 @@ mc:`<p><strong>Erro de Monte Carlo.</strong> A potência simulada é apresentada
 }};
 </script>
 <script>
+const CLUSTER_COPY={
+  en:{
+    design:'Randomisation unit',on:'Randomise by cluster',size:'Participants per cluster',icc:'Intracluster correlation (ICC)',
+    hint:'Use the same cluster size and outcome ICC in both arms.',
+    survival:'Cluster randomisation is available for continuous, binary and count outcomes.',
+    cov:'Baseline covariate adjustment is available with individual randomisation.',
+    total:'Total clusters',allocation:'Cluster allocation T : C',drop:'Cluster dropout %',dropHint:'whole clusters lost',
+    badSize:'Enter a whole cluster size from 2 to 1,000,000.',
+    badICC:'ICC must be between 0 and 1.',
+    badK:'Enter a whole number of clusters from 4 to 8,000,000. Each arm needs at least two clusters.',
+    badDrop:'Cluster dropout must be at least 0% and below 100%.',
+    badCount:'The expected number of events per cluster is too large.',
+    infeasible:'The formula could not reach the target power within 8 million clusters.',
+    simLimit:'This design is too large to simulate in the browser. Try fewer replicates or use Formula.',
+    small:'With fewer than 10 clusters in an arm, power estimates can be sensitive to the analysis and outcome distribution.',
+    boundaries:'Simulated trials with an undefined test statistic count as trials that do not reject the null.',
+    stats:(k1,k2)=>`${k1} control clusters · ${k2} treatment clusters`,
+    settings:(m,icc,de)=>`${m} participants per cluster · ICC = ${icc} · design effect = ${de}`,
+    recruit:(k,n,d)=>`Randomise ${k} clusters (${n} participants) to allow for ${d}% cluster dropout.`,
+    analysis:'The formula uses a normal approximation with a Welch t critical value. It multiplies the individual-randomisation variance by the design effect 1 + (m − 1) × ICC, where m is the cluster size. Simulation generates independent cluster summaries with the chosen outcome ICC and applies a Welch test to the arm means, with delta-method variances for log ratios.',
+    paperTest:'a cluster-level Welch test',
+    paperMethod:' Power was calculated using the design effect and a normal approximation with a Welch t critical value.',
+    paperDesign:(k1,k2,m,icc)=>` The trial uses cluster randomisation with ${k1} control clusters and ${k2} treatment clusters, ${m} participants per cluster and an assumed outcome ICC of ${icc}.`
+  },
+  es:{
+    design:'Unidad de aleatorización',on:'Aleatorizar por conglomerados',size:'Participantes por conglomerado',icc:'Correlación intraclase (ICC)',
+    hint:'Use el mismo tamaño de conglomerado y la misma ICC del desenlace en ambos grupos.',
+    survival:'La aleatorización por conglomerados está disponible para desenlaces continuos, binarios y de recuento.',
+    cov:'El ajuste por covariables basales está disponible con la aleatorización individual.',
+    total:'Total de conglomerados',allocation:'Asignación de conglomerados T : C',drop:'Pérdida de conglomerados (%)',dropHint:'pérdida de unidades completas',
+    badSize:'Introduzca un tamaño de conglomerado entero entre 2 y 1 000 000.',
+    badICC:'La ICC debe estar entre 0 y 1.',
+    badK:'Introduzca un número entero de conglomerados entre 4 y 8 000 000. Cada grupo necesita al menos dos.',
+    badDrop:'La pérdida de conglomerados debe ser al menos 0% e inferior al 100%.',
+    badCount:'El número esperado de eventos por conglomerado es demasiado alto.',
+    infeasible:'La fórmula no alcanzó la potencia objetivo con hasta 8 millones de conglomerados.',
+    simLimit:'El diseño es demasiado grande para simularlo en el navegador. Reduzca las réplicas o use Fórmula.',
+    small:'Con menos de 10 conglomerados en un grupo, la potencia estimada puede depender mucho del análisis y de la distribución del desenlace.',
+    boundaries:'Los ensayos simulados con un estadístico de prueba indefinido se cuentan como ensayos que no rechazan la hipótesis nula.',
+    stats:(k1,k2)=>`${k1} conglomerados de control · ${k2} de tratamiento`,
+    settings:(m,icc,de)=>`${m} participantes por conglomerado · ICC = ${icc} · efecto del diseño = ${de}`,
+    recruit:(k,n,d)=>`Aleatorice ${k} conglomerados (${n} participantes) para prever una pérdida del ${d}% de los conglomerados.`,
+    analysis:'La fórmula usa una aproximación normal con un valor crítico t de Welch. La varianza bajo aleatorización individual se multiplica por el efecto del diseño 1 + (m − 1) × ICC, donde m es el tamaño del conglomerado. La simulación genera resúmenes de conglomerados independientes con la ICC elegida y aplica la prueba de Welch a las medias de grupo, con varianzas del método delta para las razones logarítmicas.',
+    paperTest:'una prueba de Welch a nivel de conglomerado',
+    paperMethod:' La potencia se calculó mediante el efecto del diseño y una aproximación normal con un valor crítico t de Welch.',
+    paperDesign:(k1,k2,m,icc)=>` El ensayo usa aleatorización por conglomerados con ${k1} conglomerados de control y ${k2} de tratamiento, ${m} participantes por conglomerado y una ICC supuesta de ${icc}.`
+  },
+  pt:{
+    design:'Unidade de aleatorização',on:'Aleatorizar por conglomerados',size:'Participantes por conglomerado',icc:'Correlação intraclasse (ICC)',
+    hint:'Use o mesmo tamanho de conglomerado e a mesma ICC do desfecho em ambos os grupos.',
+    survival:'A aleatorização por conglomerados está disponível para desfechos contínuos, binários e de contagem.',
+    cov:'O ajuste para covariáveis basais está disponível com aleatorização individual.',
+    total:'Total de conglomerados',allocation:'Alocação de conglomerados T : C',drop:'Perda de conglomerados (%)',dropHint:'perda de unidades completas',
+    badSize:'Introduza um tamanho de conglomerado inteiro entre 2 e 1 000 000.',
+    badICC:'A ICC deve estar entre 0 e 1.',
+    badK:'Introduza um número inteiro de conglomerados entre 4 e 8 000 000. Cada grupo precisa de pelo menos dois.',
+    badDrop:'A perda de conglomerados deve ser de pelo menos 0% e inferior a 100%.',
+    badCount:'O número esperado de eventos por conglomerado é demasiado elevado.',
+    infeasible:'A fórmula não atingiu a potência pretendida com até 8 milhões de conglomerados.',
+    simLimit:'O desenho é demasiado grande para simular no navegador. Reduza as réplicas ou use Fórmula.',
+    small:'Com menos de 10 conglomerados num grupo, a potência estimada pode ser sensível à análise e à distribuição do desfecho.',
+    boundaries:'Os ensaios simulados com uma estatística de teste indefinida são contados como ensaios que não rejeitam a hipótese nula.',
+    stats:(k1,k2)=>`${k1} conglomerados de controlo · ${k2} de tratamento`,
+    settings:(m,icc,de)=>`${m} participantes por conglomerado · ICC = ${icc} · efeito do desenho = ${de}`,
+    recruit:(k,n,d)=>`Aleatorize ${k} conglomerados (${n} participantes) para prever uma perda de ${d}% dos conglomerados.`,
+    analysis:'A fórmula usa uma aproximação normal com um valor crítico t de Welch. A variância sob aleatorização individual é multiplicada pelo efeito do desenho 1 + (m − 1) × ICC, onde m é o tamanho do conglomerado. A simulação gera resumos de conglomerados independentes com a ICC escolhida e aplica o teste de Welch às médias dos grupos, com variâncias do método delta para os rácios logarítmicos.',
+    paperTest:'um teste de Welch ao nível dos conglomerados',
+    paperMethod:' A potência foi calculada com o efeito do desenho e uma aproximação normal com um valor crítico t de Welch.',
+    paperDesign:(k1,k2,m,icc)=>` O ensaio usa aleatorização por conglomerados com ${k1} conglomerados de controlo e ${k2} de tratamento, ${m} participantes por conglomerado e uma ICC assumida de ${icc}.`
+  }
+};
+const C=()=>CLUSTER_COPY[lang];
+
 /* ================= outcome configuration ================= */
 const G={
 cont:'<svg viewBox="0 0 20 20" fill="none"><path d="M1 17c4 0 5-13 9-13s5 13 9 13" style="stroke:var(--ctl)" stroke-width="1.8" stroke-linecap="round"/></svg>',
@@ -887,7 +1140,7 @@ const OUT=[
 /* persistent state */
 const S={outcome:'cont',method:'formula',solve:'n',design:'sup',
  alpha:0.05,targetPower:0.80,Ntotal:120,ratio:1,dropout:10,nsim:1000,seed:'',
- covOn:false,rho:0.5,vals:{}};
+ covOn:false,rho:0.5,clustered:false,clusterSize:20,icc:0.05,Ktotal:20,clusterDropout:0,vals:{}};
 OUT.forEach(o=>{S.vals[o.id]={};o.fields.forEach(f=>S.vals[o.id][f.id]=f.v);});
 function storedLang(){try{return localStorage.getItem('ssize-lang')}catch(e){return null}}
 let lang=[new URLSearchParams(location.search).get('lang'),storedLang()].find(c=>c in I18N)||'en';
@@ -906,23 +1159,35 @@ function fieldHTML(o,f,val){
   <input type="number" id="f_${f.id}" value="${val}" step="${f.step||'any'}" ${f.min!==undefined?`min="${f.min}"`:''} ${f.max!==undefined?`max="${f.max}"`:''}></div>`;
 }
 function renderForm(){
-  const o=OUT.find(x=>x.id===S.outcome),T=L();
+  const o=OUT.find(x=>x.id===S.outcome),T=L(),c=C();
+  const supportsClusters=CLUSTER_OUTCOMES.has(o.id),clustered=supportsClusters&&S.clustered;
   $('panelTitle').textContent=T.out[o.id][0];
   const V=S.vals[o.id];
   let h='';
   if(o.ni)h+=`<div class="field"><span class="flab">${T.hyp}</span>${segHTML('segDesign',[{v:'sup',t:T.sup},{v:'ni',t:T.ni}],S.design)}</div>`;
   h+=o.fields.filter(f=>!f.ni||S.design==='ni').map(f=>fieldHTML(o,f,V[f.id])).join('');
+  h+=`<fieldset class="grp"><legend>${c.design}</legend>
+   <label class="switch-row" for="f_clustered"><span>${c.on}</span>
+     <input id="f_clustered" type="checkbox" ${clustered?'checked':''} ${supportsClusters?'':'disabled aria-describedby="clusterHelp"'}></label>
+   ${clustered?`<div class="row2">
+     <div class="field"><label for="f_clusterSize">${c.size}</label>
+       <input type="number" id="f_clusterSize" value="${S.clusterSize}" min="2" max="1000000" step="1" aria-describedby="clusterHelp"></div>
+     <div class="field"><label for="f_icc">${c.icc}</label>
+       <input type="number" id="f_icc" value="${S.icc}" min="0" max="1" step="any" aria-describedby="clusterHelp"></div>
+   </div><div id="clusterHelp" class="hint">${c.hint}</div>`
+   :supportsClusters?'':`<div id="clusterHelp" class="hint">${c.survival}</div>`}
+  </fieldset>`;
   h+=`<fieldset class="grp"><legend>${T.ea}</legend>
    <div class="row2">
     <div class="field"><label for="f_alpha">α <span class="hint">${S.design==='ni'&&o.ni?T.one:T.two}</span></label>
       <input type="number" id="f_alpha" value="${S.alpha}" step="0.01" min="0.0001" max="0.3"></div>
     ${S.solve==='n'
       ?`<div class="field"><label for="f_pow">${T.tpow}</label><input type="number" id="f_pow" value="${S.targetPower}" step="0.05" min="0.1" max="0.999"></div>`
-      :`<div class="field"><label for="f_N">${T.Ntot}</label><input type="number" id="f_N" value="${S.Ntotal}" step="2" min="4"></div>`}
+      :`<div class="field"><label for="${clustered?'f_K':'f_N'}">${clustered?c.total:T.Ntot}</label><input type="number" id="${clustered?'f_K':'f_N'}" value="${clustered?S.Ktotal:S.Ntotal}" step="${clustered?1:2}" min="4" ${clustered?'max="8000000"':''}></div>`}
    </div>
    <div class="row2">
-    <div class="field"><label for="f_ratio">${T.alloc}</label><input type="number" id="f_ratio" value="${S.ratio}" step="0.25" min="0.2" max="5"></div>
-    ${S.solve==='n'?`<div class="field"><label for="f_drop">${T.drop}<span class="hint">${T.dropH}</span></label><input type="number" id="f_drop" value="${S.dropout}" step="5" min="0" max="60"></div>`:'<div></div>'}
+    <div class="field"><label for="f_ratio">${clustered?c.allocation:T.alloc}</label><input type="number" id="f_ratio" value="${S.ratio}" step="0.25" min="0.2" max="5"></div>
+    ${S.solve==='n'?`<div class="field"><label for="${clustered?'f_clusterDrop':'f_drop'}">${clustered?c.drop:T.drop}<span class="hint">${clustered?c.dropHint:T.dropH}</span></label><input type="number" id="${clustered?'f_clusterDrop':'f_drop'}" value="${clustered?S.clusterDropout:S.dropout}" step="${clustered?'any':5}" min="0" max="${clustered?99.99:60}"></div>`:'<div></div>'}
    </div>
    <div class="field"><span class="flab">${T.solve}</span>${segHTML('segSolve',[{v:'n',t:T.sN},{v:'power',t:T.sP}],S.solve)}</div>
   </fieldset>`;
@@ -933,7 +1198,9 @@ function renderForm(){
       <div class="field"><label for="f_nsim">${T.reps}</label><select id="f_nsim">${[500,1000,2000,5000].map(k=>`<option ${k===S.nsim?'selected':''}>${k}</option>`).join('')}</select></div>
       <div class="field"><label for="f_seed">${T.seed}<span class="hint">${T.seedH}</span></label><input type="number" id="f_seed" value="${S.seed}" step="1"></div>
      </div></fieldset>`;
-    if(o.cov&&S.design==='sup'){
+    if(clustered&&o.cov){
+      h+=`<div class="hint">${c.cov}</div>`;
+    } else if(o.cov&&S.design==='sup'){
       h+=`<fieldset class="grp"><legend>${T.cov}</legend>
        <label class="switch-row" for="f_cov"><span>${T.covAdj}</span><input type="checkbox" id="f_cov" ${S.covOn?'checked':''}></label>
        <div class="field" id="rhoField" ${S.covOn?'':'hidden'}>
@@ -956,6 +1223,14 @@ function wireForm(o){
   bindSeg('segDesign',v=>{S.design=v;if(v==='ni')S.covOn=false;saveInputs(o);renderForm();});
   bindSeg('segSolve',v=>{S.solve=v;saveInputs(o);renderForm();});
   bindSeg('segMethod',v=>{S.method=v;saveInputs(o);renderForm();});
+  $('f_clustered').addEventListener('change',e=>{
+    saveInputs(o);
+    S.clustered=e.currentTarget.checked;
+    lastR=null;
+    renderForm();
+    renderEmpty();
+    $('f_clustered').focus();
+  });
   const cov=$('f_cov');
   if(cov)cov.addEventListener('change',()=>{S.covOn=cov.checked;$('rhoField').hidden=!cov.checked;});
   const rho=$('f_rho');
@@ -967,6 +1242,8 @@ function saveInputs(o){
   const g=(id,cur)=>{const el=$(id);return el?parseFloat(el.value):cur;};
   S.alpha=g('f_alpha',S.alpha);S.targetPower=g('f_pow',S.targetPower);
   S.Ntotal=g('f_N',S.Ntotal);S.ratio=g('f_ratio',S.ratio);S.dropout=g('f_drop',S.dropout);
+  S.clusterSize=g('f_clusterSize',S.clusterSize);S.icc=g('f_icc',S.icc);
+  S.Ktotal=g('f_K',S.Ktotal);S.clusterDropout=g('f_clusterDrop',S.clusterDropout);
   const ns=$('f_nsim');if(ns)S.nsim=parseInt(ns.value);
   const sd=$('f_seed');if(sd)S.seed=sd.value;
 }
@@ -993,16 +1270,26 @@ function buildParams(){
   const o=OUT.find(x=>x.id===S.outcome);
   saveInputs(o);
   const seedFixed=S.seed!==''&&!isNaN(parseInt(S.seed));
+  const clustered=CLUSTER_OUTCOMES.has(o.id)&&S.clustered;
   const V=S.vals[o.id],P={outcome:o.id,design:o.ni?S.design:'sup',method:S.method,solve:S.solve,
     alpha:S.alpha,targetPower:S.targetPower,Ntotal:Math.round(S.Ntotal),ratio:S.ratio,
-    dropout:S.solve==='n'?(S.dropout||0):0,nsim:S.nsim,
+    dropout:S.solve==='n'?(clustered?S.clusterDropout:(S.dropout||0)):0,nsim:S.nsim,
+    clustered,clusterSize:S.clusterSize,icc:S.icc,Ktotal:S.Ktotal,
     seed:seedFixed?parseInt(S.seed):(Date.now()%2**31),
-    covOn:S.method==='sim'&&o.cov&&S.design==='sup'&&S.covOn,rho:S.rho,covAnalytic:false,...V};
+    covOn:!clustered&&S.method==='sim'&&o.cov&&S.design==='sup'&&S.covOn,rho:S.rho,covAnalytic:false,...V};
   const E=L().E,errs=[],warns=[];
   const bad=(c,k,arg)=>{if(c)errs.push(typeof E[k]==='function'?E[k](arg):E[k]);};
   bad(!(P.alpha>0&&P.alpha<0.3),'alpha');
   bad(S.solve==='n'&&!(P.targetPower>P.alpha&&P.targetPower<1),'pow');
-  bad(S.solve==='power'&&!(P.Ntotal>=4),'N');
+  bad(!clustered&&S.solve==='power'&&!(P.Ntotal>=4),'N');
+  if(clustered){
+    const c=C();
+    if(!Number.isInteger(P.clusterSize)||P.clusterSize<2||P.clusterSize>1_000_000)errs.push(c.badSize);
+    if(!(P.icc>=0&&P.icc<=1))errs.push(c.badICC);
+    if(P.solve==='power'&&(!Number.isInteger(P.Ktotal)||P.Ktotal<4||P.Ktotal>MAX_CLUSTERS))errs.push(c.badK);
+    if(!(P.dropout>=0&&P.dropout<100))errs.push(c.badDrop);
+    if(o.id==='count'&&P.rate0*P.expo*Math.max(1,P.rr)*P.clusterSize>1e12)errs.push(c.badCount);
+  }
   bad(!(P.ratio>=0.2&&P.ratio<=5),'ratio');
   if(o.id==='cont'){
     bad(!(P.sd>0),'sd');
@@ -1045,6 +1332,7 @@ function postWarnings(P,o,n1,n2){ // warning keys, translated at render time
 
 /* ================= formula strips (with substituted values) ================= */
 function formulaStrip(P,o,R){
+  if(P.clustered)return C().analysis;
   const za=zAlpha(P).toFixed(3),zb=qnorm(P.targetPower).toFixed(3),w=L().R.with;
   const zaSym=P.design==='ni'?'z₁₋α':'z₁₋α/₂';
   switch(o.id){
@@ -1073,10 +1361,22 @@ async function calculate(){
   const eb=$('errBox');
   if(errs.length){eb.innerHTML=errs.join('<br>');eb.classList.add('on');return;}
   eb.classList.remove('on');
-  const btn=$('btnRun');btn.disabled=true;
+  const controls=[...document.querySelectorAll('#form button:not(:disabled),#form input:not(:disabled),#form select:not(:disabled),#nav button,.lang')];
+  controls.forEach(control=>{control.disabled=true;});
   try{
     const R={P,o,seedFixed};
-    if(P.solve==='n'){
+    if(P.clustered){
+      const size=P.solve==='power'?P.Ktotal:solveClusterCount(P);
+      if(size===null)throw new Error(C().infeasible);
+      const plan=splitClusters(size,P.ratio);
+      const result=P.method!=='sim'?plan:P.solve==='n'?await simSolveN(P,setProgress):
+        {...plan,...await runSimBatch(P,plan.n1,plan.n2,P.nsim,P.seed,setProgress)};
+      if(!result)throw new Error(C().infeasible);
+      const {n1:k1,n2:k2,N:K}=result,m=P.clusterSize,retained=1-P.dropout/100;
+      const Krand=Math.ceil(k1/retained)+Math.ceil(k2/retained);
+      Object.assign(R,result,{k1,k2,K,Krand,n1:k1*m,n2:k2*m,N:K*m,Nrand:Krand*m,
+        powerAnalytic:clusterPower(P,k1,k2)});
+    }else if(P.solve==='n'){
       if(P.method==='formula'){
         const n1s=solveNGeneric(P,POWFN[o.id]);
         if(n1s===null)throw new Error(L().E.infeasible);
@@ -1104,7 +1404,7 @@ async function calculate(){
     lastR=R;
     renderResults(R);
   }catch(e){eb.textContent=e.message;eb.classList.add('on');}
-  finally{btn.disabled=false;clearProgress();}
+  finally{controls.forEach(control=>{control.disabled=false;});clearProgress();}
 }
 
 /* ================= results rendering ================= */
@@ -1120,7 +1420,7 @@ function effectVal(P,o,R){
   }
 }
 function renderResults(R){
-  const {P,o}=R,isSim=P.method==='sim',T=L(),X=T.R;
+  const {P,o}=R,isSim=P.method==='sim',T=L(),X=T.R,c=C();
   let stats='';
   const st=(lab,val,cls='')=>`<div class="stat"><div class="lab">${lab}</div><div class="val ${cls}">${val}</div></div>`;
   stats+=st(X.ctrl,R.n1,'ctrl')+st(X.trt,R.n2,'trt')+st(X.fpow,pct(R.powerAnalytic));
@@ -1133,14 +1433,19 @@ function renderResults(R){
   if(P.solve==='n'){
     head=`<div class="n-block"><div class="lab">${X.totalN}</div>
       <div class="N"><span class="nsym">N =</span>${R.N}</div>
-      <div class="after">${P.dropout>0?X.rand(R.Nrand,P.dropout):X.noDrop}</div></div>`;
+      <div class="after">${P.dropout>0?(P.clustered?c.recruit(R.Krand,R.Nrand,P.dropout):X.rand(R.Nrand,P.dropout)):X.noDrop}</div></div>`;
   }else{
     const shown=isSim?(P.covOn&&R.pA!=null?R.pA:R.pU):R.powerAnalytic;
     head=`<div class="n-block"><div class="lab">${X.powerAt(isSim,R.N)}</div>
       <div class="N">${pct(shown)}</div>
       <div class="after">${P.design==='ni'?T.one:T.two} α = ${P.alpha}${isSim?` · ${R.nsim} ${X.reps}`:''}</div></div>`;
   }
-  const warnsHtml=R.warns.length?`<div class="warn-note">${R.warns.map(k=>T.W[k]).join('<br>')}</div>`:'';
+  const warns=R.warns.map(k=>T.W[k]);
+  if(P.clustered&&Math.min(R.k1,R.k2)<10)warns.push(c.small);
+  const warnsHtml=warns.length?`<div class="warn-note">${warns.join('<br>')}</div>`:'';
+  const clusterInfo=P.clustered?`<div class="formula-strip">
+    <strong>${c.stats(R.k1,R.k2)}</strong><br>${c.settings(P.clusterSize,P.icc,nf(clusterDesignEffect(P)))}
+  </div>`:'';
   let covCard='';
   if(isSim&&P.covOn&&R.pA!=null){
     const za=zAlpha(P);
@@ -1160,6 +1465,7 @@ function renderResults(R){
   $('results').innerHTML=`
    <section class="card">
      <div class="headline">${head}<div class="stat-grid">${stats}</div></div>
+     ${clusterInfo}
      ${warnsHtml}
      <div class="formula-strip">${formulaStrip(P,o,R)}</div>
    </section>
@@ -1174,7 +1480,7 @@ function renderResults(R){
    </section>
    ${covCard}
    <section class="card"><details class="methods"><summary>${X.methods}</summary>
-     <div class="m-body">${T.M[o.id]}${isSim?T.M.mc:''}</div></details></section>`;
+     <div class="m-body">${P.clustered?(isSim?`<p>${c.boundaries}</p>`:''):T.M[o.id]}${isSim?T.M.mc:''}</div></details></section>`;
   $('copyPaper').addEventListener('click',async e=>{
     const b=e.currentTarget;
     try{await navigator.clipboard.writeText($('paperText').textContent);b.textContent=X.copied;}
@@ -1195,14 +1501,23 @@ function drawPowerChart(R){
   const {P,o}=R,r=R.n2/R.n1,X=L().R;
   const ink=cssv('--ink'),muted=cssv('--muted'),grid=cssv('--grid'),ctl=cssv('--ctl'),trt=cssv('--trt'),surf=cssv('--surface');
   Chart.defaults.color=muted;Chart.defaults.borderColor=grid;
-  const Nstar=R.N,lo=Math.max(6,Math.round(Nstar*0.3)),hi=Math.round(Nstar*2.1);
+  const m=P.clusterSize;
+  const Nstar=R.N,lo=P.clustered?Math.max(4,Math.round(R.K*.3))*m:Math.max(6,Math.round(Nstar*.3));
+  const hi=P.clustered?Math.min(MAX_CLUSTERS,Math.round(R.K*2.1))*m:Math.round(Nstar*2.1);
   const pts=[],ptsAdj=[];
-  for(let i=0;i<=40;i++){
+  if(P.clustered){
+    const totals=new Set([R.K]);
+    for(let i=0;i<=40;i++)totals.add(Math.round((lo+(hi-lo)*i/40)/m));
+    for(const K of [...totals].sort((a,b)=>a-b)){
+      const {n1,n2}=splitClusters(K,P.ratio);
+      pts.push({x:K*m,y:100*clusterPower(P,n1,n2)});
+    }
+  }else for(let i=0;i<=40;i++){
     const N=lo+(hi-lo)*i/40,n1=N/(1+r);
     pts.push({x:Math.round(N),y:100*POWFN[o.id](n1,{...P,ratio:r,covAnalytic:false})});
     if(P.covOn&&o.id==='cont')ptsAdj.push({x:Math.round(N),y:100*POWFN[o.id](n1,{...P,ratio:r,covAnalytic:true})});
   }
-  const ds=[{type:'line',label:X.dsF,data:pts,borderColor:ink,borderWidth:2,pointRadius:0,tension:.25}];
+  const ds=[{type:'line',label:X.dsF,data:pts,borderColor:ink,borderWidth:2,pointRadius:P.clustered?2:0,tension:P.clustered?0:.25}];
   if(ptsAdj.length)ds.push({type:'line',label:X.dsA,data:ptsAdj,borderColor:trt,borderDash:[6,4],borderWidth:2,pointRadius:0,tension:.25});
   if(P.solve==='n')ds.push({type:'line',label:X.dsT,data:[{x:lo,y:100*P.targetPower},{x:hi,y:100*P.targetPower}],borderColor:muted,borderDash:[3,4],borderWidth:1.4,pointRadius:0});
   if(P.method==='sim'&&R.pU!==undefined){
